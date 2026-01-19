@@ -8,4 +8,5 @@ export * from './clients/solver-client.js';
 export * from './types/intent.js';
 export * from './services/event-monitor.js';
 export * from './services/state-validator.js';
+export * from './services/intent-publisher.js';
 export * from './reporters/intent-reporter.js';
