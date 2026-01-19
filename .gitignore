@@ -6,3 +6,8 @@ coverage/
 reports/
 *.log
 .DS_Store
+
+# Local Planning Docs
+thoughts/
+IMPLEMENTATION_CONTEXT.md
+plans/
