@@ -1,5 +1,5 @@
 import type { Hash, Address, Hex } from 'viem';
-import { decodeEventLog, keccak256 } from 'viem';
+import { decodeEventLog } from 'viem';
 import { getWalletClient, getPublicClient } from '../clients/evm-client.js';
 import { SolverClient, isQuoteSuccess } from '../clients/solver-client.js';
 import type { IntentData } from '../types/intent.js';
@@ -87,12 +87,7 @@ export class IntentPublisher {
     await publicClient.waitForTransactionReceipt({ hash: approveTx });
     log.info({ approveTx }, 'Token approval confirmed');
 
-    // Step 2: Compute routeHash from encodedRoute
-    // The encodedRoute from quote contains the route data
-    // We need to hash it to get routeHash for the fund call
-    const routeHash = this.computeRouteHash(quote.encodedRoute as Hex);
-
-    // Step 3: Build reward struct
+    // Step 2: Build reward struct
     const reward = {
       deadline: BigInt(quote.deadline),
       creator: walletAddress,
@@ -106,20 +101,19 @@ export class IntentPublisher {
       ],
     };
 
-    // Step 4: Call Portal.fund()
+    // Step 3: Call Portal.publishAndFund() to publish and fund in one transaction
     log.info({
       destination: CHAIN_IDS[data.destinationChain],
-      routeHash,
       deadline: quote.deadline,
-    }, 'Calling Portal.fund()');
+    }, 'Calling Portal.publishAndFund()');
 
     const fundTx = await walletClient.writeContract({
       address: contracts.sourcePortal as Address,
       abi: PORTAL_ABI,
-      functionName: 'fund',
+      functionName: 'publishAndFund',
       args: [
         BigInt(CHAIN_IDS[data.destinationChain]),
-        routeHash,
+        quote.encodedRoute as Hex, // Raw route bytes (not hashed)
         reward,
         false, // allowPartial
       ],
@@ -132,7 +126,7 @@ export class IntentPublisher {
     // The fund function returns intentHash and emits an event
     const intentHash = this.extractIntentHash(fundReceipt);
 
-    log.info({ intentHash, fundTx }, 'Intent funded successfully');
+    log.info({ intentHash, fundTx }, 'Intent published and funded successfully');
 
     return {
       intentHash,
@@ -143,17 +137,10 @@ export class IntentPublisher {
     };
   }
 
-  /**
-   * Compute routeHash from encoded route
-   * The routeHash is keccak256 of the encoded route data
-   */
-  private computeRouteHash(encodedRoute: Hex): Hash {
-    return keccak256(encodedRoute);
-  }
 
   /**
-   * Extract intentHash from fund transaction receipt
-   * IntentFunded event: (bytes32 intentHash, address funder, bool complete) - all non-indexed
+   * Extract intentHash from publishAndFund transaction receipt
+   * IntentPublished event: (bytes32 intentHash) - non-indexed
    */
   private extractIntentHash(receipt: { logs: readonly { topics: Hex[]; data: Hex }[] }): Hash {
     for (const log of receipt.logs) {
@@ -164,15 +151,15 @@ export class IntentPublisher {
           topics: log.topics as [Hex, ...Hex[]],
         });
 
-        if (decoded.eventName === 'IntentFunded' && decoded.args) {
-          const args = decoded.args as unknown as { intentHash: Hash; funder: Address; complete: boolean };
+        if (decoded.eventName === 'IntentPublished' && decoded.args) {
+          const args = decoded.args as unknown as { intentHash: Hash };
           return args.intentHash;
         }
       } catch {
         // Not the event we're looking for, continue
       }
     }
-    throw new Error('Could not find IntentFunded event in transaction logs');
+    throw new Error('Could not find IntentPublished event in transaction logs');
   }
 }
 
