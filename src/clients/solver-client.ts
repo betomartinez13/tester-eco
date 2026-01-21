@@ -109,7 +109,7 @@ export class SolverClient {
 
   async getQuote(request: QuoteV2Request): Promise<QuoteV2Response> {
     log.debug({ request }, 'Getting quote');
-    const res = await fetch(`${this.baseUrl}/api/v2/quote`, {
+    const res = await fetch(`${this.baseUrl}/api/v2/quote/reverse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
