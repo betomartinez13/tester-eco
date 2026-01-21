@@ -2,9 +2,19 @@ import { EventMonitor } from '../../src/services/event-monitor.js';
 import { StateValidator } from '../../src/services/state-validator.js';
 import { IntentReporter } from '../../src/reporters/intent-reporter.js';
 import { IntentPublisher } from '../../src/services/intent-publisher.js';
-import { SolverClient } from '../../src/clients/solver-client.js';
+import { SolverClient, isQuoteSuccess } from '../../src/clients/solver-client.js';
 import { getConfig } from '../../src/config/index.js';
 import { privateKeyToAccount } from 'viem/accounts';
+import { getChainId, type SupportedChainName } from '../../src/config/chains.js';
+import type { Address, Hex } from 'viem';
+import type { IntentData, QuoteData } from '../../src/types/intent.js';
+
+// Token addresses for USDC on each chain
+const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
+  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+};
 
 // Skip E2E tests unless explicitly enabled with RUN_E2E=true
 const runE2E = process.env.RUN_E2E === 'true';
@@ -39,18 +49,55 @@ describeE2E('Intent Lifecycle E2E', () => {
   });
 
   it('should complete Optimism → Base lifecycle', async () => {
-    const intentData = {
-      sourceChain: 'optimism' as const,
-      destinationChain: 'base' as const,
-      token: 'USDC',
-      amount: '1000000',  // 1 USDC
-      reward: '100000',   // 0.1 USDC
-    };
+    const sourceChain = 'optimism' as const;
+    const destinationChain = 'base' as const;
+    const sourceToken = USDC_ADDRESSES[sourceChain];
+    const destToken = USDC_ADDRESSES[destinationChain];
+    const amount = '1000000';  // 1 USDC
 
     console.log('Starting Optimism → Base intent lifecycle...');
 
-    // Step 1: Publish and fund intent
+    // Step 1: Get quote from solver
+    console.log('Getting quote from solver...');
+    const quoteRequest = solverClient.buildQuoteRequest({
+      sourceChainID: getChainId(sourceChain),
+      destinationChainID: getChainId(destinationChain),
+      sourceToken,
+      destinationToken: destToken,
+      sourceAmount: amount,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+    });
+
+    const quoteResponse = await solverClient.getQuote(quoteRequest);
+    if (!isQuoteSuccess(quoteResponse)) {
+      throw new Error(`Quote failed: ${JSON.stringify(quoteResponse.validations.failed)}`);
+    }
+
+    const quote: QuoteData = {
+      sourceAmount: quoteResponse.quoteResponses[0].sourceAmount,
+      destinationAmount: quoteResponse.quoteResponses[0].destinationAmount,
+      encodedRoute: quoteResponse.quoteResponses[0].encodedRoute as Hex,
+      deadline: quoteResponse.quoteResponses[0].deadline,
+      contracts: {
+        sourcePortal: quoteResponse.contracts.sourcePortal as Address,
+        destinationPortal: quoteResponse.contracts.destinationPortal as Address,
+        prover: quoteResponse.contracts.prover as Address,
+      },
+    };
+
+    // Step 2: Publish and fund intent
     console.log('Publishing and funding intent...');
+    const intentData: IntentData = {
+      sourceChain,
+      destinationChain,
+      sourceToken,
+      destinationToken: destToken,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+      quote,
+    };
+
     const {
       intentHash,
       txHash: publishTx,
@@ -135,18 +182,55 @@ describeE2E('Intent Lifecycle E2E', () => {
   }, 600000); // 10 minute timeout
 
   it('should complete Optimism → Arbitrum lifecycle', async () => {
-    const intentData = {
-      sourceChain: 'optimism' as const,
-      destinationChain: 'arbitrum' as const,
-      token: 'USDC',
-      amount: '1000000',  // 1 USDC
-      reward: '100000',   // 0.1 USDC
-    };
+    const sourceChain = 'optimism' as const;
+    const destinationChain = 'arbitrum' as const;
+    const sourceToken = USDC_ADDRESSES[sourceChain];
+    const destToken = USDC_ADDRESSES[destinationChain];
+    const amount = '1000000';  // 1 USDC
 
     console.log('Starting Optimism → Arbitrum intent lifecycle...');
 
-    // Step 1: Publish and fund intent
+    // Step 1: Get quote from solver
+    console.log('Getting quote from solver...');
+    const quoteRequest = solverClient.buildQuoteRequest({
+      sourceChainID: getChainId(sourceChain),
+      destinationChainID: getChainId(destinationChain),
+      sourceToken,
+      destinationToken: destToken,
+      sourceAmount: amount,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+    });
+
+    const quoteResponse = await solverClient.getQuote(quoteRequest);
+    if (!isQuoteSuccess(quoteResponse)) {
+      throw new Error(`Quote failed: ${JSON.stringify(quoteResponse.validations.failed)}`);
+    }
+
+    const quote: QuoteData = {
+      sourceAmount: quoteResponse.quoteResponses[0].sourceAmount,
+      destinationAmount: quoteResponse.quoteResponses[0].destinationAmount,
+      encodedRoute: quoteResponse.quoteResponses[0].encodedRoute as Hex,
+      deadline: quoteResponse.quoteResponses[0].deadline,
+      contracts: {
+        sourcePortal: quoteResponse.contracts.sourcePortal as Address,
+        destinationPortal: quoteResponse.contracts.destinationPortal as Address,
+        prover: quoteResponse.contracts.prover as Address,
+      },
+    };
+
+    // Step 2: Publish and fund intent
     console.log('Publishing and funding intent...');
+    const intentData: IntentData = {
+      sourceChain,
+      destinationChain,
+      sourceToken,
+      destinationToken: destToken,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+      quote,
+    };
+
     const {
       intentHash,
       txHash: publishTx,

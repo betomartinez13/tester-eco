@@ -1,4 +1,4 @@
-import type { Hash, Address } from 'viem';
+import type { Hash, Address, Hex } from 'viem';
 import type { SupportedChainName } from '../config/chains.js';
 
 export type IntentState =
@@ -9,12 +9,33 @@ export type IntentState =
   | 'WITHDRAWN'
   | 'FAILED';
 
+/**
+ * Quote data from solver - fetched before publishing intent
+ */
+export interface QuoteData {
+  sourceAmount: string;
+  destinationAmount: string;
+  encodedRoute: Hex;
+  deadline: number;
+  contracts: {
+    sourcePortal: Address;
+    destinationPortal: Address;
+    prover: Address;
+  };
+}
+
+/**
+ * Complete intent data including quote information
+ * Note: Quote must be fetched BEFORE creating IntentData
+ */
 export interface IntentData {
   sourceChain: SupportedChainName;
   destinationChain: SupportedChainName;
-  token: string;
-  amount: string;
-  reward: string;
+  sourceToken: Address;
+  destinationToken: Address;
+  funder: Address;
+  recipient: Address;
+  quote: QuoteData;
 }
 
 export interface IntentStateRecord {

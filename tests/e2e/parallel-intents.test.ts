@@ -2,10 +2,25 @@ import { EventMonitor } from '../../src/services/event-monitor.js';
 import { StateValidator } from '../../src/services/state-validator.js';
 import { IntentReporter } from '../../src/reporters/intent-reporter.js';
 import { IntentPublisher } from '../../src/services/intent-publisher.js';
+import { SolverClient, isQuoteSuccess } from '../../src/clients/solver-client.js';
 import { getConfig } from '../../src/config/index.js';
 import { privateKeyToAccount } from 'viem/accounts';
-import type { IntentData, IntentJourney } from '../../src/types/intent.js';
-import type { Address } from 'viem';
+import { getChainId, type SupportedChainName } from '../../src/config/chains.js';
+import type { IntentData, IntentJourney, QuoteData } from '../../src/types/intent.js';
+import type { Address, Hex } from 'viem';
+
+// Token addresses for USDC on each chain
+const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
+  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+};
+
+interface TestIntentParams {
+  sourceChain: SupportedChainName;
+  destinationChain: SupportedChainName;
+  amount: string;
+}
 
 // Skip E2E tests unless explicitly enabled with RUN_E2E=true
 const runE2E = process.env.RUN_E2E === 'true';
@@ -16,6 +31,7 @@ describeE2E('Parallel Intent Execution', () => {
   let monitor: EventMonitor;
   let validator: StateValidator;
   let reporter: IntentReporter;
+  let solverClient: SolverClient;
   let walletAddress: string;
 
   beforeAll(() => {
@@ -23,6 +39,7 @@ describeE2E('Parallel Intent Execution', () => {
     monitor = new EventMonitor();
     validator = new StateValidator();
     reporter = new IntentReporter();
+    solverClient = new SolverClient();
 
     const config = getConfig();
     const account = privateKeyToAccount(config.privateKey as `0x${string}`);
@@ -36,10 +53,51 @@ describeE2E('Parallel Intent Execution', () => {
     reporter.saveReport('./reports');
   });
 
-  async function executeLifecycle(intentData: IntentData): Promise<IntentJourney> {
-    console.log(`Starting ${intentData.sourceChain} → ${intentData.destinationChain} lifecycle...`);
+  async function executeLifecycle(params: TestIntentParams): Promise<IntentJourney> {
+    console.log(`Starting ${params.sourceChain} → ${params.destinationChain} lifecycle...`);
 
-    // Publish and fund intent (this also gets contract addresses)
+    const sourceToken = USDC_ADDRESSES[params.sourceChain];
+    const destToken = USDC_ADDRESSES[params.destinationChain];
+
+    // Get quote from solver
+    const quoteRequest = solverClient.buildQuoteRequest({
+      sourceChainID: getChainId(params.sourceChain),
+      destinationChainID: getChainId(params.destinationChain),
+      sourceToken,
+      destinationToken: destToken,
+      sourceAmount: params.amount,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+    });
+
+    const quoteResponse = await solverClient.getQuote(quoteRequest);
+    if (!isQuoteSuccess(quoteResponse)) {
+      throw new Error(`Quote failed: ${JSON.stringify(quoteResponse.validations.failed)}`);
+    }
+
+    const quote: QuoteData = {
+      sourceAmount: quoteResponse.quoteResponses[0].sourceAmount,
+      destinationAmount: quoteResponse.quoteResponses[0].destinationAmount,
+      encodedRoute: quoteResponse.quoteResponses[0].encodedRoute as Hex,
+      deadline: quoteResponse.quoteResponses[0].deadline,
+      contracts: {
+        sourcePortal: quoteResponse.contracts.sourcePortal as Address,
+        destinationPortal: quoteResponse.contracts.destinationPortal as Address,
+        prover: quoteResponse.contracts.prover as Address,
+      },
+    };
+
+    const intentData: IntentData = {
+      sourceChain: params.sourceChain,
+      destinationChain: params.destinationChain,
+      sourceToken,
+      destinationToken: destToken,
+      funder: walletAddress as Address,
+      recipient: walletAddress as Address,
+      quote,
+    };
+
+    // Publish and fund intent
     const {
       intentHash,
       txHash,
@@ -109,20 +167,16 @@ describeE2E('Parallel Intent Execution', () => {
   }
 
   it('should execute multiple intents in parallel', async () => {
-    const intents: IntentData[] = [
+    const intents: TestIntentParams[] = [
       {
         sourceChain: 'optimism',
         destinationChain: 'base',
-        token: 'USDC',
         amount: '1000000',  // 1 USDC
-        reward: '100000',   // 0.1 USDC
       },
       {
         sourceChain: 'optimism',
         destinationChain: 'arbitrum',
-        token: 'USDC',
         amount: '1000000',  // 1 USDC
-        reward: '100000',   // 0.1 USDC
       },
     ];
 
