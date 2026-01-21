@@ -53,7 +53,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const destinationChain = 'base' as const;
     const sourceToken = USDC_ADDRESSES[sourceChain];
     const destToken = USDC_ADDRESSES[destinationChain];
-    const amount = '1000000';  // 1 USDC
+    const amount = '100000';  // 0.1 USDC (10 cents)
 
     console.log('Starting Optimism → Base intent lifecycle...');
 
@@ -186,7 +186,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const destinationChain = 'arbitrum' as const;
     const sourceToken = USDC_ADDRESSES[sourceChain];
     const destToken = USDC_ADDRESSES[destinationChain];
-    const amount = '1000000';  // 1 USDC
+    const amount = '100000';  // 0.1 USDC (10 cents)
 
     console.log('Starting Optimism → Arbitrum intent lifecycle...');
 
