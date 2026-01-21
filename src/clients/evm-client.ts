@@ -7,7 +7,7 @@ import {
   type Transport,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { CHAIN_CONFIGS, type SupportedChainName } from '../config/chains.js';
+import { CHAINS, type SupportedChainName } from '../config/chains.js';
 import { getConfig } from '../config/index.js';
 
 const clientCache = new Map<SupportedChainName, PublicClient<Transport, Chain>>();
@@ -25,9 +25,8 @@ function getRpcUrl(chainName: SupportedChainName): string {
 export function getPublicClient(chainName: SupportedChainName): PublicClient<Transport, Chain> {
   let client = clientCache.get(chainName);
   if (!client) {
-    const chainConfig = CHAIN_CONFIGS[chainName];
     client = createPublicClient({
-      chain: chainConfig.chain,
+      chain: CHAINS[chainName],
       transport: http(getRpcUrl(chainName)),
     });
     clientCache.set(chainName, client);
@@ -37,11 +36,10 @@ export function getPublicClient(chainName: SupportedChainName): PublicClient<Tra
 
 export function getWalletClient(chainName: SupportedChainName) {
   const config = getConfig();
-  const chainConfig = CHAIN_CONFIGS[chainName];
   const account = privateKeyToAccount(config.privateKey as `0x${string}`);
 
   return createWalletClient({
-    chain: chainConfig.chain,
+    chain: CHAINS[chainName],
     transport: http(getRpcUrl(chainName)),
     account,
   });

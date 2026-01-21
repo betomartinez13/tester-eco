@@ -1,19 +1,22 @@
-import { optimism, base, arbitrum } from 'viem/chains';
-import type { Chain } from 'viem';
+import { optimism, base, arbitrum, type Chain } from 'viem/chains';
 
 export type SupportedChainName = 'optimism' | 'base' | 'arbitrum';
 
-export interface ChainConfig {
-  name: SupportedChainName;
-  chain: Chain;
-  chainId: number;
-}
-
-export const CHAIN_CONFIGS: Record<SupportedChainName, ChainConfig> = {
-  optimism: { name: 'optimism', chain: optimism, chainId: 10 },
-  base: { name: 'base', chain: base, chainId: 8453 },
-  arbitrum: { name: 'arbitrum', chain: arbitrum, chainId: 42161 },
+/**
+ * Supported chains - using viem's built-in chain definitions
+ */
+export const CHAINS: Record<SupportedChainName, Chain> = {
+  optimism,
+  base,
+  arbitrum,
 };
+
+/**
+ * Helper to get chain ID from chain name
+ */
+export function getChainId(chainName: SupportedChainName): number {
+  return CHAINS[chainName].id;
+}
 
 export const SUPPORTED_ROUTES = [
   { source: 'optimism' as const, destination: 'base' as const },
