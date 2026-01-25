@@ -171,12 +171,12 @@ describeE2E('Parallel Intent Execution', () => {
       {
         sourceChain: 'optimism',
         destinationChain: 'base',
-        amount: '100000',  // 0.1 USDC (10 cents)
+        amount: '50000',  // 0.05 USDC (5 cents)
       },
       {
         sourceChain: 'optimism',
         destinationChain: 'arbitrum',
-        amount: '100000',  // 0.1 USDC (10 cents)
+        amount: '50000',  // 0.05 USDC (5 cents)
       },
     ];
 
