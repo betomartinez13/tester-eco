@@ -49,7 +49,8 @@ export class SvmPublisher extends BasePublisher {
     const sourceChainId = BigInt(getChainId(data.sourceChain as SupportedChainName));
     const destinationChainId = BigInt(getChainId(data.destinationChain as SupportedChainName));
 
-    // Normalize addresses to UniversalAddress format
+    // Normalize addresses to UniversalAddress format for hash calculation
+    // Note: Solver returns Base58 strings for Solana addresses
     const sourceToken = AddressNormalizer.normalize(
       data.sourceToken,
       ChainType.SVM
@@ -60,7 +61,11 @@ export class SvmPublisher extends BasePublisher {
       ChainType.SVM
     );
 
-    const prover = contracts.prover as UniversalAddress;
+    // Prover comes from solver as Base58, normalize to UniversalAddress
+    const prover = AddressNormalizer.normalize(
+      contracts.prover,
+      ChainType.SVM
+    );
 
     // Build reward structure for hash calculation
     const rewardForHash = {

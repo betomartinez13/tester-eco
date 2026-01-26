@@ -87,11 +87,9 @@ function setupAnchorProgram(context: PublishContext): Program {
     preflightCommitment: 'confirmed',
   });
 
-  // Get Portal program address from context (comes from solver API)
-  const portalAddress = AddressNormalizer.denormalize(
-    context.portalAddress as any,
-    ChainType.SVM
-  );
+  // Get Portal program address from context (comes from solver API as Base58)
+  // No need to denormalize - solver returns native Base58 format
+  const portalAddress = context.portalAddress;
 
   // Create program instance with IDL
   const idl = getPortalIdl(portalAddress);
