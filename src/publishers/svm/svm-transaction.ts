@@ -11,6 +11,7 @@ import {
   SystemProgram,
   type Keypair,
 } from '@solana/web3.js';
+import BN from 'bn.js';
 import {
   getAssociatedTokenAddress,
   TOKEN_PROGRAM_ID,
@@ -154,21 +155,21 @@ async function buildFundingTransaction(
     { pubkey: vaultTokenAccount, isWritable: true, isSigner: false },
   ];
 
-  // Convert reward to Anchor format
+  // Convert reward to Anchor format (using BN for numbers)
   const anchorReward = {
-    deadline: BigInt(context.reward.deadline),
+    deadline: new BN(context.reward.deadline),
     creator: new PublicKey(
       AddressNormalizer.denormalize(context.reward.creator as any, ChainType.SVM)
     ),
     prover: new PublicKey(
       AddressNormalizer.denormalize(context.reward.prover as any, ChainType.SVM)
     ),
-    nativeAmount: BigInt(context.reward.nativeAmount),
+    nativeAmount: new BN(context.reward.nativeAmount),
     tokens: context.reward.tokens.map(token => ({
       token: new PublicKey(
         AddressNormalizer.denormalize(token.token as any, ChainType.SVM)
       ),
-      amount: BigInt(token.amount),
+      amount: new BN(token.amount),
     })),
   };
 
@@ -178,7 +179,7 @@ async function buildFundingTransaction(
   // Build fund instruction
   const transaction = await program.methods
     .fund({
-      destination: context.destination,
+      destination: new BN(context.destination.toString()),
       routeHash: routeHashBytes,
       reward: anchorReward,
       allowPartial: false,
