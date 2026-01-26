@@ -4,7 +4,7 @@
  * Converts Intent data structures to Borsh-compatible format for Solana encoding.
  */
 
-import { BN } from '@coral-xyz/anchor';
+import BN from 'bn.js';
 import { PublicKey } from '@solana/web3.js';
 import type { Hex } from 'viem';
 import { AddressNormalizer } from './address-normalizer.js';
