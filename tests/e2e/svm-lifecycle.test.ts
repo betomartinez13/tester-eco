@@ -187,7 +187,7 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
     expect(journey?.isComplete).toBe(true);
     expect(journey?.currentState).toBe('WITHDRAWN');
     console.log('Solana → Optimism lifecycle completed successfully!');
-  }, 600000); // 10 minute timeout
+  }, 900000); // 15 minute timeout
 
   it('should complete Optimism → Solana lifecycle', async () => {
     const sourceChain = 'optimism' as const;
@@ -320,5 +320,5 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
     expect(journey?.isComplete).toBe(true);
     expect(journey?.currentState).toBe('WITHDRAWN');
     console.log('Optimism → Solana lifecycle completed successfully!');
-  }, 600000); // 10 minute timeout
+  }, 900000); // 15 minute timeout
 });

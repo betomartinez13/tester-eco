@@ -177,10 +177,11 @@ async function buildFundingTransaction(
   const routeHashBytes = hexToBytes32Array(context.routeHash);
 
   // Build fund instruction
+  // Note: Bytes32 is a tuple struct, so wrap array in object with key '0'
   const transaction = await program.methods
     .fund({
       destination: new BN(context.destination.toString()),
-      routeHash: routeHashBytes,
+      routeHash: { 0: routeHashBytes },
       reward: anchorReward,
       allowPartial: false,
     })
