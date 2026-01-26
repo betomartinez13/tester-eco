@@ -109,12 +109,14 @@ async function buildFundingTransaction(
   const payer = context.keypair.publicKey;
 
   // Derive vault PDA (Program Derived Address)
+  // Vault PDA = findProgramAddress([b"vault", intentHash], programId)
+  const intentHashBuffer = Buffer.from(context.intentHash.slice(2), 'hex'); // Remove 0x prefix
   const [vaultPda] = PublicKey.findProgramAddressSync(
-    [Buffer.from('vault')],
+    [Buffer.from('vault'), intentHashBuffer],
     program.programId
   );
 
-  log.info({ vaultPda: vaultPda.toString() }, 'Derived vault PDA');
+  log.info({ vaultPda: vaultPda.toString(), intentHash: context.intentHash }, 'Derived vault PDA');
 
   // Get token mint from reward
   const tokenAddress = context.reward.tokens[0].token;
