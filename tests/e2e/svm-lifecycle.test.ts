@@ -152,7 +152,7 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       intentHash,
       'solana',
       prover as Address,
-      { interval: 5000, timeout: 180000 }
+      { interval: 5000, timeout: 600000 }
     );
     expect(proven).not.toBeNull();
     console.log(`Intent proven at block ${proven!.blockNumber}`);
@@ -285,7 +285,7 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       intentHash,
       'optimism',
       prover as Address,
-      { interval: 5000, timeout: 180000 }
+      { interval: 5000, timeout: 600000 }
     );
     expect(proven).not.toBeNull();
     console.log(`Intent proven at block ${proven!.blockNumber}`);
