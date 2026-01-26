@@ -14,6 +14,7 @@ const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
   optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
   base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+  solana: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' as Address, // SPL USDC
 };
 
 interface TestIntentParams {
@@ -116,7 +117,7 @@ describeE2E('Parallel Intent Execution', () => {
     const fulfilled = await monitor.waitForFulfilled(
       intentHash,
       intentData.destinationChain,
-      destinationPortal,
+      destinationPortal as Address,
       { interval: 5000, timeout: 120000 }
     );
 
@@ -132,7 +133,7 @@ describeE2E('Parallel Intent Execution', () => {
       const proven = await monitor.pollForProven(
         intentHash,
         intentData.sourceChain,
-        prover,
+        prover as Address,
         { interval: 5000, timeout: 180000 }
       );
 
@@ -148,7 +149,7 @@ describeE2E('Parallel Intent Execution', () => {
         const withdrawn = await monitor.pollForWithdrawn(
           intentHash,
           intentData.sourceChain,
-          sourcePortal,
+          sourcePortal as Address,
           { interval: 5000, timeout: 300000 }
         );
 
@@ -166,23 +167,32 @@ describeE2E('Parallel Intent Execution', () => {
     return validator.getJourney(intentHash)!;
   }
 
-  it('should execute multiple intents in parallel', async () => {
-    const intents: TestIntentParams[] = [
-      {
-        sourceChain: 'optimism',
-        destinationChain: 'base',
-        amount: '50000',  // 0.05 USDC (5 cents)
-      },
-      {
-        sourceChain: 'optimism',
-        destinationChain: 'arbitrum',
-        amount: '50000',  // 0.05 USDC (5 cents)
-      },
-    ];
+  // All 6 possible routes between 3 chains
+  const allRoutes: TestIntentParams[] = [
+    { sourceChain: 'optimism', destinationChain: 'base', amount: '100000' },
+    { sourceChain: 'optimism', destinationChain: 'arbitrum', amount: '100000' },
+    { sourceChain: 'base', destinationChain: 'optimism', amount: '100000' },
+    { sourceChain: 'base', destinationChain: 'arbitrum', amount: '100000' },
+    { sourceChain: 'arbitrum', destinationChain: 'optimism', amount: '100000' },
+    { sourceChain: 'arbitrum', destinationChain: 'base', amount: '100000' },
+  ];
 
-    console.log(`Executing ${intents.length} intents in parallel...`);
+  it.each(allRoutes)(
+    'should complete $sourceChain → $destinationChain lifecycle',
+    async (params) => {
+      const journey = await executeLifecycle(params);
+      reporter.addJourney(journey);
 
-    const promises = intents.map((data) => executeLifecycle(data));
+      expect(journey.isComplete).toBe(true);
+      expect(journey.currentState).toBe('WITHDRAWN');
+    },
+    600000 // 10 minute timeout per route
+  );
+
+  it('should execute all 6 routes in parallel', async () => {
+    console.log(`Executing ${allRoutes.length} routes in parallel...`);
+
+    const promises = allRoutes.map((data) => executeLifecycle(data));
     const results = await Promise.allSettled(promises);
 
     // Add all journeys to reporter
@@ -198,8 +208,8 @@ describeE2E('Parallel Intent Execution', () => {
       (r) => r.status === 'fulfilled' && r.value.currentState === 'WITHDRAWN'
     );
 
-    console.log(`${succeeded.length}/${intents.length} intents completed successfully`);
+    console.log(`${succeeded.length}/${allRoutes.length} routes completed successfully`);
 
-    expect(succeeded.length).toBe(intents.length);
-  }, 600000); // 10 minute timeout
+    expect(succeeded.length).toBe(allRoutes.length);
+  }, 3600000); // 60 minute timeout for all routes
 });

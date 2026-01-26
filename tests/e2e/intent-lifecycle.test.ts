@@ -14,6 +14,7 @@ const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
   optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
   base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+  solana: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' as Address, // SPL USDC
 };
 
 // Skip E2E tests unless explicitly enabled with RUN_E2E=true
@@ -126,7 +127,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const fulfilled = await monitor.waitForFulfilled(
       intentHash,
       'base',
-      destinationPortal,
+      destinationPortal as Address,
       { interval: 5000, timeout: 120000 }
     );
     expect(fulfilled).not.toBeNull();
@@ -143,7 +144,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const proven = await monitor.pollForProven(
       intentHash,
       'optimism',
-      prover,
+      prover as Address,
       { interval: 5000, timeout: 180000 }
     );
     expect(proven).not.toBeNull();
@@ -160,7 +161,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const withdrawn = await monitor.pollForWithdrawn(
       intentHash,
       'optimism',
-      sourcePortal,
+      sourcePortal as Address,
       { interval: 5000, timeout: 300000 }
     );
     expect(withdrawn).not.toBeNull();
@@ -259,7 +260,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const fulfilled = await monitor.waitForFulfilled(
       intentHash,
       'arbitrum',
-      destinationPortal,
+      destinationPortal as Address,
       { interval: 5000, timeout: 120000 }
     );
     expect(fulfilled).not.toBeNull();
@@ -276,7 +277,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const proven = await monitor.pollForProven(
       intentHash,
       'optimism',
-      prover,
+      prover as Address,
       { interval: 5000, timeout: 180000 }
     );
     expect(proven).not.toBeNull();
@@ -293,7 +294,7 @@ describeE2E('Intent Lifecycle E2E', () => {
     const withdrawn = await monitor.pollForWithdrawn(
       intentHash,
       'optimism',
-      sourcePortal,
+      sourcePortal as Address,
       { interval: 5000, timeout: 300000 }
     );
     expect(withdrawn).not.toBeNull();

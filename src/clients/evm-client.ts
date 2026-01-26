@@ -18,6 +18,7 @@ function getRpcUrl(chainName: SupportedChainName): string {
     optimism: config.optimismRpcUrl,
     base: config.baseRpcUrl,
     arbitrum: config.arbitrumRpcUrl,
+    solana: config.solanaRpcUrl, // Not used in EVM client, handled by SVM client
   };
   return urls[chainName];
 }
