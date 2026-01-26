@@ -19,6 +19,9 @@ const log = createChildLogger('SvmEventMonitor');
 const FULFILL_MARKER_SEED = Buffer.from('fulfill_marker');
 const CLAIMED_MARKER_SEED = Buffer.from('claimed_marker');
 
+// Seeds for Prover program PDAs (from eco-svm-std/src/prover.rs)
+const PROOF_SEED = Buffer.from('proof');
+
 /**
  * Solana Event Monitor
  *
@@ -88,9 +91,8 @@ export class SvmEventMonitor {
   /**
    * Poll for IntentProven on Solana source chain
    *
-   * For Solana as source, we check the Prover program for proof data.
-   * Note: The prover is typically on the destination chain side.
-   * For Solana source → EVM destination, the proof happens on EVM.
+   * Checks for Proof account existence, which is created when
+   * the solver submits proof of fulfillment to the prover program.
    *
    * @param intentHash - The intent hash to watch for
    * @param proverAddress - Prover program address
@@ -104,41 +106,43 @@ export class SvmEventMonitor {
     log.info({ intentHash, prover: proverAddress }, 'Polling for Solana IntentProven');
 
     const connection = getSolanaConnection();
+    const programId = new PublicKey(proverAddress);
 
-    // For Solana source → EVM destination:
-    // Proof happens on EVM side (prover is EVM contract)
-    // We would need to check EVM chain, not Solana
+    // Derive Proof PDA
+    // PDA = findProgramAddress([b"proof", intentHash], programId)
+    const intentHashBuffer = Buffer.from(intentHash.slice(2), 'hex');
+    const [proofPda] = PublicKey.findProgramAddressSync(
+      [PROOF_SEED, intentHashBuffer],
+      programId
+    );
 
-    // For EVM source → Solana destination:
-    // Proof happens on EVM side as well
+    log.info({ proofPda: proofPda.toString() }, 'Derived Proof PDA');
 
-    // Since proofs are submitted on the source chain and source is typically
-    // where funds come from, if Solana is the source, we would check the
-    // dispatcher account or proof records
-
-    // For simplicity: poll for a reasonable time
-    // In production, you'd query the specific proof account structure
     return pollUntil(async () => {
       try {
-        // Wait a reasonable time for cross-chain proof propagation
-        // Proofs typically take 1-3 minutes after fulfillment
-        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
+        // Check if Proof account exists
+        const accountInfo = await connection.getAccountInfo(proofPda);
 
-        // Assume proof happened after reasonable wait
-        // TODO: Implement proper proof account checking if prover is on Solana
-        log.info({ intentHash }, 'Assuming proof submitted after delay');
+        if (accountInfo !== null) {
+          // Account exists = proof was submitted!
+          log.info({ intentHash, proofPda: proofPda.toString() }, 'Intent proven on Solana');
 
-        const slot = await connection.getSlot();
+          // Get the slot/block where this account was created
+          const slot = await connection.getSlot();
 
-        return {
-          log: {} as any,
-          blockNumber: BigInt(slot),
-          transactionHash: intentHash,
-          args: { intentHash },
-        };
-      } catch (error: any) {
-        log.error({ intentHash, error }, 'Error checking proof status');
+          return {
+            log: {} as any,
+            blockNumber: BigInt(slot),
+            transactionHash: intentHash,
+            args: { intentHash, proofPda: proofPda.toString() },
+          };
+        }
+
+        // Account doesn't exist yet, keep polling
         return null;
+      } catch (error: any) {
+        log.error({ intentHash, error }, 'Error checking Proof account');
+        return null; // Keep polling on error
       }
     }, options);
   }
