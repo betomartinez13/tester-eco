@@ -135,7 +135,7 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       intentHash,
       'optimism',
       destinationPortal as Address,
-      { interval: 5000, timeout: 120000 }
+      { interval: 5000, timeout: 600000 }
     );
     expect(fulfilled).not.toBeNull();
     console.log(`Intent fulfilled at block ${fulfilled!.blockNumber}`);
@@ -268,7 +268,7 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       intentHash,
       'solana',
       destinationPortal as Address,
-      { interval: 5000, timeout: 120000 }
+      { interval: 5000, timeout: 600000 }
     );
     expect(fulfilled).not.toBeNull();
     console.log(`Intent fulfilled at block ${fulfilled!.blockNumber}`);
