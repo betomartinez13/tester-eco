@@ -149,10 +149,11 @@ async function buildFundingTransaction(
   }, 'Derived token accounts');
 
   // Prepare remaining accounts for token transfers
+  // Order MUST match Portal program TokenTransferAccounts: [from, to, mint]
   const remainingAccounts = [
-    { pubkey: tokenMint, isWritable: false, isSigner: false },
-    { pubkey: funderTokenAccount, isWritable: true, isSigner: false },
-    { pubkey: vaultTokenAccount, isWritable: true, isSigner: false },
+    { pubkey: funderTokenAccount, isWritable: true, isSigner: false },  // from
+    { pubkey: vaultTokenAccount, isWritable: true, isSigner: false },   // to
+    { pubkey: tokenMint, isWritable: false, isSigner: false },          // mint
   ];
 
   // Convert reward to Anchor format (using BN for numbers)
