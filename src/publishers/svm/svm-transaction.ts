@@ -156,6 +156,7 @@ async function buildFundingTransaction(
   ];
 
   // Convert reward to Anchor format (using BN for numbers)
+  // Note: Field names must match IDL exactly (snake_case for Solana)
   const anchorReward = {
     deadline: new BN(context.reward.deadline),
     creator: new PublicKey(
@@ -164,7 +165,7 @@ async function buildFundingTransaction(
     prover: new PublicKey(
       AddressNormalizer.denormalize(context.reward.prover as any, ChainType.SVM)
     ),
-    nativeAmount: new BN(context.reward.nativeAmount),
+    native_amount: new BN(context.reward.nativeAmount),
     tokens: context.reward.tokens.map(token => ({
       token: new PublicKey(
         AddressNormalizer.denormalize(token.token as any, ChainType.SVM)
