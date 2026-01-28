@@ -20,7 +20,7 @@ import { toBorshReward, type BorshReward } from './borsh-converter.js';
  * Reward structure for hash calculation
  */
 export interface RewardForHash {
-  deadline: string;
+  deadline: string | bigint;
   creator: UniversalAddress;
   prover: UniversalAddress;
   nativeAmount: string;

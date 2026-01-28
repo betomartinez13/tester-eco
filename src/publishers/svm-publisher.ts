@@ -69,7 +69,7 @@ export class SvmPublisher extends BasePublisher {
 
     // Build reward structure for hash calculation
     const rewardForHash = {
-      deadline: String(quote.deadline),
+      deadline: BigInt(quote.deadline),
       creator: funder,
       prover,
       nativeAmount: '0', // No native SOL reward
@@ -105,7 +105,7 @@ export class SvmPublisher extends BasePublisher {
       destination: destinationChainId,
       encodedRoute: quote.encodedRoute,
       reward: {
-        deadline: String(quote.deadline),
+        deadline: BigInt(quote.deadline),
         creator: funder as string,
         prover: prover as string,
         nativeAmount: '0',

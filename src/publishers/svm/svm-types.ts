@@ -20,7 +20,7 @@ export interface PublishContext {
   destination: bigint;
   encodedRoute: string;
   reward: {
-    deadline: string;
+    deadline: bigint;
     creator: string;
     prover: string;
     nativeAmount: string;

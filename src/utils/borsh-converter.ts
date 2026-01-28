@@ -65,7 +65,7 @@ function hexToBytes32Array(hex: Hex): number[] {
  * Convert reward to Borsh-compatible format
  */
 export function toBorshReward(reward: {
-  deadline: string;
+  deadline: string | bigint;
   creator: string;
   prover: string;
   nativeAmount: string;
@@ -75,7 +75,7 @@ export function toBorshReward(reward: {
   }>;
 }): BorshReward {
   return {
-    deadline: new BN(reward.deadline),
+    deadline: new BN(typeof reward.deadline === 'bigint' ? reward.deadline.toString() : reward.deadline),
     creator: new PublicKey(AddressNormalizer.denormalize(reward.creator as any, ChainType.SVM)),
     prover: new PublicKey(AddressNormalizer.denormalize(reward.prover as any, ChainType.SVM)),
     native_amount: new BN(reward.nativeAmount),
