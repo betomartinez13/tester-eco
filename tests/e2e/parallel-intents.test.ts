@@ -99,6 +99,7 @@ describeE2E('Parallel Intent Execution', () => {
     };
 
     // Publish and fund intent
+    const startTime = Date.now();
     const {
       intentHash,
       txHash,
@@ -107,7 +108,8 @@ describeE2E('Parallel Intent Execution', () => {
       prover,
     } = await publisher.publishAndFund(intentData);
 
-    console.log(`Intent ${intentHash.slice(0, 10)}... published`);
+    const fundedTime = Date.now();
+    console.log(`✅ Intent ${intentHash.slice(0, 10)}... FUNDED`);
 
     validator.initializeIntent(intentHash, intentData.sourceChain, intentData.destinationChain);
     validator.recordState(intentHash, { state: 'PUBLISHED', timestamp: new Date(), txHash });
@@ -122,7 +124,9 @@ describeE2E('Parallel Intent Execution', () => {
     );
 
     if (fulfilled) {
-      console.log(`Intent ${intentHash.slice(0, 10)}... fulfilled`);
+      const fulfilledTime = Date.now();
+      const fundedToFulfilled = ((fulfilledTime - fundedTime) / 1000).toFixed(1);
+      console.log(`✅ Intent ${intentHash.slice(0, 10)}... FULFILLED (${fundedToFulfilled}s)`);
       validator.recordState(intentHash, {
         state: 'FULFILLED',
         timestamp: new Date(),
@@ -138,7 +142,9 @@ describeE2E('Parallel Intent Execution', () => {
       );
 
       if (proven) {
-        console.log(`Intent ${intentHash.slice(0, 10)}... proven`);
+        const provenTime = Date.now();
+        const fulfilledToProven = ((provenTime - fulfilledTime) / 1000).toFixed(1);
+        console.log(`✅ Intent ${intentHash.slice(0, 10)}... PROVEN (${fulfilledToProven}s)`);
         validator.recordState(intentHash, {
           state: 'PROVEN',
           timestamp: new Date(),
@@ -154,7 +160,10 @@ describeE2E('Parallel Intent Execution', () => {
         );
 
         if (withdrawn) {
-          console.log(`Intent ${intentHash.slice(0, 10)}... withdrawn`);
+          const withdrawnTime = Date.now();
+          const provenToWithdrawn = ((withdrawnTime - provenTime) / 1000).toFixed(1);
+          const totalTime = ((withdrawnTime - fundedTime) / 1000).toFixed(1);
+          console.log(`✅ Intent ${intentHash.slice(0, 10)}... WITHDRAWN (${provenToWithdrawn}s) | Total: ${totalTime}s`);
           validator.recordState(intentHash, {
             state: 'WITHDRAWN',
             timestamp: new Date(),

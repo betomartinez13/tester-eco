@@ -46,14 +46,20 @@ export class EvmPublisher extends BasePublisher {
       amount: quote.sourceAmount
     }, 'Approving tokens');
 
+    // Get fresh nonce for approval transaction
+    const approveNonce = await publicClient.getTransactionCount({
+      address: walletClient.account.address,
+    });
+
     const approveTx = await walletClient.writeContract({
       address: data.sourceToken as Address,
       abi: ERC20_ABI,
       functionName: 'approve',
       args: [contracts.sourcePortal as Address, BigInt(quote.sourceAmount)],
+      nonce: approveNonce,
     });
     await publicClient.waitForTransactionReceipt({ hash: approveTx });
-    log.info({ approveTx }, 'Token approval confirmed');
+    log.info({ approveTx, nonce: approveNonce }, 'Token approval confirmed');
 
     // Step 2: Build reward struct
     const reward = {
@@ -76,6 +82,12 @@ export class EvmPublisher extends BasePublisher {
       deadline: quote.deadline,
     }, 'Calling Portal.publishAndFund()');
 
+    // Get fresh nonce for fund transaction (should be approveNonce + 1)
+    const fundNonce = await publicClient.getTransactionCount({
+      address: walletClient.account.address,
+    });
+    log.info({ fundNonce }, 'Using nonce for publishAndFund');
+
     const fundTx = await walletClient.writeContract({
       address: contracts.sourcePortal as Address,
       abi: PORTAL_ABI,
@@ -87,6 +99,7 @@ export class EvmPublisher extends BasePublisher {
         false, // allowPartial
       ],
       value: 0n,
+      nonce: fundNonce,
     });
 
     const fundReceipt = await publicClient.waitForTransactionReceipt({ hash: fundTx });
