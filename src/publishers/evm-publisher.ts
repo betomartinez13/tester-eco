@@ -82,11 +82,9 @@ export class EvmPublisher extends BasePublisher {
       deadline: quote.deadline,
     }, 'Calling Portal.publishAndFund()');
 
-    // Get fresh nonce for fund transaction (should be approveNonce + 1)
-    const fundNonce = await publicClient.getTransactionCount({
-      address: walletClient.account.address,
-    });
-    log.info({ fundNonce }, 'Using nonce for publishAndFund');
+    // Use approveNonce + 1 for fund transaction (approval already consumed approveNonce)
+    const fundNonce = approveNonce + 1;
+    log.info({ approveNonce, fundNonce }, 'Using nonce for publishAndFund');
 
     const fundTx = await walletClient.writeContract({
       address: contracts.sourcePortal as Address,
