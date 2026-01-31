@@ -19,6 +19,10 @@ function getRpcUrl(chainName: SupportedChainName): string {
     base: config.baseRpcUrl,
     arbitrum: config.arbitrumRpcUrl,
     solana: config.solanaRpcUrl, // Not used in EVM client, handled by SVM client
+    ethereum: config.ethereumRpcUrl,
+    polygon: config.polygonRpcUrl,
+    ronin: config.roninRpcUrl,
+    ink: config.inkRpcUrl,
   };
   return urls[chainName];
 }

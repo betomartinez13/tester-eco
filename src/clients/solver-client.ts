@@ -36,6 +36,29 @@ export interface QuoteV2Fee {
   amount: string;
 }
 
+export interface BlockchainChainToken {
+  address: string;
+  decimals: number;
+  symbol: string;
+}
+
+export interface BlockchainChainWallet {
+  type: string;
+  address: string;
+  metadata?: {
+    signer: string;
+    mode: string;
+  };
+}
+
+export interface BlockchainChain {
+  chainId: number;
+  chainName: string;
+  chainType: 'EVM' | 'SVM';
+  wallets: BlockchainChainWallet[];
+  tokens: BlockchainChainToken[];
+}
+
 export interface QuoteV2ResponseItem {
   intentExecutionType: string;
   sourceChainID: number;
@@ -119,6 +142,20 @@ export class SolverClient {
       throw new Error(`Quote request failed: ${res.status} - ${errorText}`);
     }
     return res.json() as Promise<QuoteV2Response>;
+  }
+
+  async getBlockchainChains(): Promise<BlockchainChain[]> {
+    log.debug('Fetching blockchain chains from solver');
+    const res = await fetch(`${this.baseUrl}/api/v1/blockchain/chains`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'testereco/1.0.0',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to get blockchain chains: ${res.status}`);
+    }
+    return res.json() as Promise<BlockchainChain[]>;
   }
 
   /**

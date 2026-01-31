@@ -7,22 +7,24 @@ import { getConfig } from '../../src/config/index.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import { getChainId, type SupportedChainName } from '../../src/config/chains.js';
 import { getSolanaKeypair } from '../../src/clients/svm-client.js';
+import { extractUsdcAddresses } from '../../src/utils/chain-utils.js';
 import type { Address, Hex } from 'viem';
-import type { IntentData, QuoteData } from '../../src/types/intent.js';
+import type { IntentData, IntentJourney, QuoteData } from '../../src/types/intent.js';
 
-// Token addresses for USDC on each chain
-const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
-  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-  solana: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' as Address, // SPL USDC
-};
+// USDC addresses will be fetched dynamically from solver API
+let USDC_ADDRESSES: Record<SupportedChainName, Address>;
+
+interface TestIntentParams {
+  sourceChain: SupportedChainName;
+  destinationChain: SupportedChainName;
+  amount: string;
+}
 
 // Skip E2E tests unless explicitly enabled with RUN_E2E=true
 const runE2E = process.env.RUN_E2E === 'true';
 const describeE2E = runE2E ? describe : describe.skip;
 
-describeE2E('Solana Intent Lifecycle E2E', () => {
+describeE2E('Solana Cross-Chain Intent Lifecycle E2E', () => {
   let publisher: IntentPublisher;
   let monitor: EventMonitor;
   let validator: StateValidator;
@@ -37,6 +39,15 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
     validator = new StateValidator();
     reporter = new IntentReporter();
     solverClient = new SolverClient();
+
+    // Fetch blockchain chains from solver API
+    console.log('Fetching supported chains from solver API...');
+    const chains = await solverClient.getBlockchainChains();
+    console.log(`Found ${chains.length} supported chains: ${chains.map(c => c.chainName).join(', ')}`);
+
+    // Extract USDC addresses dynamically
+    USDC_ADDRESSES = extractUsdcAddresses(chains);
+    console.log('USDC addresses loaded for:', Object.keys(USDC_ADDRESSES).join(', '));
 
     // Get EVM wallet address from private key
     const config = getConfig();
@@ -56,25 +67,27 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
     reporter.saveReport('./reports');
   });
 
-  it('should complete Solana → Optimism lifecycle', async () => {
-    const sourceChain = 'solana' as const;
-    const destinationChain = 'optimism' as const;
-    const sourceToken = USDC_ADDRESSES[sourceChain];
-    const destToken = USDC_ADDRESSES[destinationChain];
-    const amount = '100000';  // 0.1 USDC (10 cents)
+  async function executeLifecycle(params: TestIntentParams): Promise<IntentJourney> {
+    console.log(`\n🚀 Starting ${params.sourceChain} → ${params.destinationChain} lifecycle...`);
 
-    console.log('Starting Solana → Optimism intent lifecycle...');
+    const sourceToken = USDC_ADDRESSES[params.sourceChain];
+    const destToken = USDC_ADDRESSES[params.destinationChain];
+
+    // Determine funder and recipient based on which chain is Solana
+    const isSolanaSource = params.sourceChain === 'solana';
+    const funder = isSolanaSource ? (solanaWalletAddress as Address) : (evmWalletAddress as Address);
+    const recipient = isSolanaSource ? (evmWalletAddress as Address) : (solanaWalletAddress as Address);
 
     // Step 1: Get quote from solver
-    console.log('Getting quote from solver...');
+    console.log('📋 Getting quote from solver...');
     const quoteRequest = solverClient.buildQuoteRequest({
-      sourceChainID: getChainId(sourceChain),
-      destinationChainID: getChainId(destinationChain),
+      sourceChainID: getChainId(params.sourceChain),
+      destinationChainID: getChainId(params.destinationChain),
       sourceToken,
       destinationToken: destToken,
-      sourceAmount: amount,
-      funder: solanaWalletAddress as Address,
-      recipient: evmWalletAddress as Address,
+      sourceAmount: params.amount,
+      funder,
+      recipient,
     });
 
     const quoteResponse = await solverClient.getQuote(quoteRequest);
@@ -94,17 +107,24 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       },
     };
 
+    console.log(`  Source Amount: ${quote.sourceAmount} (${(parseInt(quote.sourceAmount) / 1e6).toFixed(2)} USDC)`);
+    console.log(`  Destination Amount: ${quote.destinationAmount} (${(parseInt(quote.destinationAmount) / 1e6).toFixed(2)} USDC)`);
+    console.log(`  Fee: ${((parseInt(quote.sourceAmount) - parseInt(quote.destinationAmount)) / 1e6).toFixed(5)} USDC`);
+    console.log(`  Deadline: ${quote.deadline} (${new Date(Number(quote.deadline) * 1000).toISOString()})`);
+
     // Step 2: Publish and fund intent
-    console.log('Publishing and funding intent...');
     const intentData: IntentData = {
-      sourceChain,
-      destinationChain,
+      sourceChain: params.sourceChain,
+      destinationChain: params.destinationChain,
       sourceToken,
       destinationToken: destToken,
-      funder: solanaWalletAddress as Address,
-      recipient: evmWalletAddress as Address,
+      funder,
+      recipient,
       quote,
     };
+
+    console.log('💰 Publishing and funding intent...');
+    const startTime = Date.now();
 
     const {
       intentHash,
@@ -114,10 +134,11 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       prover,
     } = await publisher.publishAndFund(intentData);
 
-    console.log(`Intent published: ${intentHash}`);
-    console.log(`Transaction: ${publishTx}`);
+    const fundedTime = Date.now();
+    console.log(`✅ Intent ${intentHash.slice(0, 10)}... FUNDED`);
+    console.log(`  Tx Hash: ${publishTx}`);
 
-    validator.initializeIntent(intentHash, 'solana', 'optimism');
+    validator.initializeIntent(intentHash, params.sourceChain, params.destinationChain);
     validator.recordState(intentHash, {
       state: 'PUBLISHED',
       timestamp: new Date(),
@@ -129,16 +150,20 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       txHash: publishTx,
     });
 
-    // Step 3: Wait for FULFILLED on Optimism (destination)
-    console.log('Waiting for fulfillment on Optimism...');
+    // Step 3: Wait for FULFILLED on destination chain
+    console.log(`⏳ Waiting for fulfillment on ${params.destinationChain}...`);
     const fulfilled = await monitor.waitForFulfilled(
       intentHash,
-      'optimism',
+      params.destinationChain,
       destinationPortal as Address,
-      { interval: 5000, timeout: 600000 }
+      { interval: 5000, timeout: 120000 } // 2 minutes
     );
     expect(fulfilled).not.toBeNull();
-    console.log(`Intent fulfilled at block ${fulfilled!.blockNumber}`);
+
+    const fulfilledTime = Date.now();
+    const fundedToFulfilled = ((fulfilledTime - fundedTime) / 1000).toFixed(1);
+    console.log(`✅ Intent ${intentHash.slice(0, 10)}... FULFILLED (${fundedToFulfilled}s)`);
+    console.log(`  Block: ${fulfilled!.blockNumber}`);
 
     validator.recordState(intentHash, {
       state: 'FULFILLED',
@@ -146,16 +171,20 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       blockNumber: fulfilled!.blockNumber,
     });
 
-    // Step 4: Poll for PROVEN on Solana (source)
-    console.log('Waiting for proof on Solana...');
+    // Step 4: Poll for PROVEN on source chain
+    console.log(`⏳ Waiting for proof on ${params.sourceChain}...`);
     const proven = await monitor.pollForProven(
       intentHash,
-      'solana',
+      params.sourceChain,
       prover as Address,
-      { interval: 5000, timeout: 600000 }
+      { interval: 5000, timeout: 180000 } // 3 minutes
     );
     expect(proven).not.toBeNull();
-    console.log(`Intent proven at block ${proven!.blockNumber}`);
+
+    const provenTime = Date.now();
+    const fulfilledToProven = ((provenTime - fulfilledTime) / 1000).toFixed(1);
+    console.log(`✅ Intent ${intentHash.slice(0, 10)}... PROVEN (${fulfilledToProven}s)`);
+    console.log(`  Block: ${proven!.blockNumber}`);
 
     validator.recordState(intentHash, {
       state: 'PROVEN',
@@ -163,16 +192,21 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       blockNumber: proven!.blockNumber,
     });
 
-    // Step 5: Poll for WITHDRAWN on Solana (source)
-    console.log('Waiting for withdrawal on Solana...');
+    // Step 5: Poll for WITHDRAWN on source chain
+    console.log(`⏳ Waiting for withdrawal on ${params.sourceChain}...`);
     const withdrawn = await monitor.pollForWithdrawn(
       intentHash,
-      'solana',
+      params.sourceChain,
       sourcePortal as Address,
-      { interval: 5000, timeout: 300000 }
+      { interval: 5000, timeout: 300000 } // 5 minutes
     );
     expect(withdrawn).not.toBeNull();
-    console.log(`Intent withdrawn at block ${withdrawn!.blockNumber}`);
+
+    const withdrawnTime = Date.now();
+    const provenToWithdrawn = ((withdrawnTime - provenTime) / 1000).toFixed(1);
+    const totalTime = ((withdrawnTime - fundedTime) / 1000).toFixed(1);
+    console.log(`✅ Intent ${intentHash.slice(0, 10)}... WITHDRAWN (${provenToWithdrawn}s) | Total: ${totalTime}s`);
+    console.log(`  Block: ${withdrawn!.blockNumber}`);
 
     validator.recordState(intentHash, {
       state: 'WITHDRAWN',
@@ -180,145 +214,35 @@ describeE2E('Solana Intent Lifecycle E2E', () => {
       blockNumber: withdrawn!.blockNumber,
     });
 
-    // Record journey for report
+    // Get journey and verify completion
     const journey = validator.getJourney(intentHash);
-    reporter.addJourney(journey!);
-
     expect(journey?.isComplete).toBe(true);
     expect(journey?.currentState).toBe('WITHDRAWN');
-    console.log('Solana → Optimism lifecycle completed successfully!');
-  }, 900000); // 15 minute timeout
 
-  it('should complete Optimism → Solana lifecycle', async () => {
-    const sourceChain = 'optimism' as const;
-    const destinationChain = 'solana' as const;
-    const sourceToken = USDC_ADDRESSES[sourceChain];
-    const destToken = USDC_ADDRESSES[destinationChain];
-    const amount = '100000';  // 0.1 USDC (10 cents)
+    console.log(`🎉 ${params.sourceChain} → ${params.destinationChain} completed successfully!`);
 
-    console.log('Starting Optimism → Solana intent lifecycle...');
+    return journey!;
+  }
 
-    // Step 1: Get quote from solver
-    console.log('Getting quote from solver...');
-    const quoteRequest = solverClient.buildQuoteRequest({
-      sourceChainID: getChainId(sourceChain),
-      destinationChainID: getChainId(destinationChain),
-      sourceToken,
-      destinationToken: destToken,
-      sourceAmount: amount,
-      funder: evmWalletAddress as Address,
-      recipient: solanaWalletAddress as Address,
-    });
+  // All 6 SVM routes: 3 from Solana, 3 to Solana
+  const allRoutes: TestIntentParams[] = [
+    { sourceChain: 'solana', destinationChain: 'optimism', amount: '100000' },
+    { sourceChain: 'solana', destinationChain: 'base', amount: '100000' },
+    { sourceChain: 'solana', destinationChain: 'arbitrum', amount: '100000' },
+    { sourceChain: 'optimism', destinationChain: 'solana', amount: '100000' },
+    { sourceChain: 'base', destinationChain: 'solana', amount: '100000' },
+    { sourceChain: 'arbitrum', destinationChain: 'solana', amount: '100000' },
+  ];
 
-    const quoteResponse = await solverClient.getQuote(quoteRequest);
-    if (!isQuoteSuccess(quoteResponse)) {
-      throw new Error(`Quote failed: ${JSON.stringify(quoteResponse.validations.failed)}`);
-    }
+  it.each(allRoutes)(
+    'should complete $sourceChain → $destinationChain lifecycle',
+    async (params) => {
+      const journey = await executeLifecycle(params);
+      reporter.addJourney(journey);
 
-    const quote: QuoteData = {
-      sourceAmount: quoteResponse.quoteResponses[0].sourceAmount,
-      destinationAmount: quoteResponse.quoteResponses[0].destinationAmount,
-      encodedRoute: quoteResponse.quoteResponses[0].encodedRoute as Hex,
-      deadline: quoteResponse.quoteResponses[0].deadline,
-      contracts: {
-        sourcePortal: quoteResponse.contracts.sourcePortal as Address,
-        destinationPortal: quoteResponse.contracts.destinationPortal as Address,
-        prover: quoteResponse.contracts.prover as Address,
-      },
-    };
-
-    // Step 2: Publish and fund intent
-    console.log('Publishing and funding intent...');
-    const intentData: IntentData = {
-      sourceChain,
-      destinationChain,
-      sourceToken,
-      destinationToken: destToken,
-      funder: evmWalletAddress as Address,
-      recipient: solanaWalletAddress as Address,
-      quote,
-    };
-
-    const {
-      intentHash,
-      txHash: publishTx,
-      sourcePortal,
-      destinationPortal,
-      prover,
-    } = await publisher.publishAndFund(intentData);
-
-    console.log(`Intent published: ${intentHash}`);
-    console.log(`Transaction: ${publishTx}`);
-
-    validator.initializeIntent(intentHash, 'optimism', 'solana');
-    validator.recordState(intentHash, {
-      state: 'PUBLISHED',
-      timestamp: new Date(),
-      txHash: publishTx,
-    });
-    validator.recordState(intentHash, {
-      state: 'FUNDED',
-      timestamp: new Date(),
-      txHash: publishTx,
-    });
-
-    // Step 3: Wait for FULFILLED on Solana (destination)
-    console.log('Waiting for fulfillment on Solana...');
-    const fulfilled = await monitor.waitForFulfilled(
-      intentHash,
-      'solana',
-      destinationPortal as Address,
-      { interval: 5000, timeout: 600000 }
-    );
-    expect(fulfilled).not.toBeNull();
-    console.log(`Intent fulfilled at block ${fulfilled!.blockNumber}`);
-
-    validator.recordState(intentHash, {
-      state: 'FULFILLED',
-      timestamp: new Date(),
-      blockNumber: fulfilled!.blockNumber,
-    });
-
-    // Step 4: Poll for PROVEN on Optimism (source)
-    console.log('Waiting for proof on Optimism...');
-    const proven = await monitor.pollForProven(
-      intentHash,
-      'optimism',
-      prover as Address,
-      { interval: 5000, timeout: 600000 }
-    );
-    expect(proven).not.toBeNull();
-    console.log(`Intent proven at block ${proven!.blockNumber}`);
-
-    validator.recordState(intentHash, {
-      state: 'PROVEN',
-      timestamp: new Date(),
-      blockNumber: proven!.blockNumber,
-    });
-
-    // Step 5: Poll for WITHDRAWN on Optimism (source)
-    console.log('Waiting for withdrawal on Optimism...');
-    const withdrawn = await monitor.pollForWithdrawn(
-      intentHash,
-      'optimism',
-      sourcePortal as Address,
-      { interval: 5000, timeout: 300000 }
-    );
-    expect(withdrawn).not.toBeNull();
-    console.log(`Intent withdrawn at block ${withdrawn!.blockNumber}`);
-
-    validator.recordState(intentHash, {
-      state: 'WITHDRAWN',
-      timestamp: new Date(),
-      blockNumber: withdrawn!.blockNumber,
-    });
-
-    // Record journey for report
-    const journey = validator.getJourney(intentHash);
-    reporter.addJourney(journey!);
-
-    expect(journey?.isComplete).toBe(true);
-    expect(journey?.currentState).toBe('WITHDRAWN');
-    console.log('Optimism → Solana lifecycle completed successfully!');
-  }, 900000); // 15 minute timeout
+      expect(journey.isComplete).toBe(true);
+      expect(journey.currentState).toBe('WITHDRAWN');
+    },
+    900000 // 15 minute timeout per route
+  );
 });

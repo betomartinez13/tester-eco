@@ -6,16 +6,12 @@ import { SolverClient, isQuoteSuccess } from '../../src/clients/solver-client.js
 import { getConfig } from '../../src/config/index.js';
 import { privateKeyToAccount } from 'viem/accounts';
 import { getChainId, type SupportedChainName } from '../../src/config/chains.js';
+import { extractUsdcAddresses } from '../../src/utils/chain-utils.js';
 import type { Address, Hex } from 'viem';
 import type { IntentData, QuoteData } from '../../src/types/intent.js';
 
-// Token addresses for USDC on each chain
-const USDC_ADDRESSES: Record<SupportedChainName, Address> = {
-  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-  solana: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' as Address, // SPL USDC
-};
+// USDC addresses will be fetched dynamically from solver API
+let USDC_ADDRESSES: Record<SupportedChainName, Address>;
 
 // Skip E2E tests unless explicitly enabled with RUN_E2E=true
 const runE2E = process.env.RUN_E2E === 'true';
@@ -35,6 +31,15 @@ describeE2E('Intent Lifecycle E2E', () => {
     validator = new StateValidator();
     reporter = new IntentReporter();
     solverClient = new SolverClient();
+
+    // Fetch blockchain chains from solver API
+    console.log('Fetching supported chains from solver API...');
+    const chains = await solverClient.getBlockchainChains();
+    console.log(`Found ${chains.length} supported chains: ${chains.map(c => c.chainName).join(', ')}`);
+
+    // Extract USDC addresses dynamically
+    USDC_ADDRESSES = extractUsdcAddresses(chains);
+    console.log('USDC addresses loaded for:', Object.keys(USDC_ADDRESSES).join(', '));
 
     // Get wallet address from private key
     const config = getConfig();
