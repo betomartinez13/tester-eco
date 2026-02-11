@@ -1,0 +1,22 @@
+{
+  "preset": "ts-jest/presets/default-esm",
+  "testEnvironment": "node",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../..",
+  "testRegex": "tests/circuit-breaker/circuit-breaker\\.e2e\\.spec\\.ts$",
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", {
+      "tsconfig": "tsconfig.json",
+      "useESM": true
+    }]
+  },
+  "extensionsToTreatAsEsm": [".ts"],
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
+  "testTimeout": 600000,
+  "maxWorkers": 1,
+  "verbose": true,
+  "bail": true,
+  "globalSetup": "<rootDir>/tests/circuit-breaker/setup/global-setup.cjs"
+}
