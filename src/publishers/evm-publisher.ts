@@ -7,7 +7,7 @@
 
 import type { Hash, Address, Hex } from 'viem';
 import { decodeEventLog } from 'viem';
-import { getWalletClient, getPublicClient } from '../clients/evm-client.js';
+import { getWalletClient, getPublicClient, isRateLimitedChain } from '../clients/evm-client.js';
 import type { IntentData } from '../types/intent.js';
 import { getChainId, type SupportedChainName } from '../config/chains.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -60,6 +60,12 @@ export class EvmPublisher extends BasePublisher {
     });
     await publicClient.waitForTransactionReceipt({ hash: approveTx });
     log.info({ approveTx, nonce: approveNonce }, 'Token approval confirmed');
+
+    // Wait before next call on rate-limited chains to avoid RPC throttling
+    if (isRateLimitedChain(data.sourceChain as SupportedChainName)) {
+      log.info('Waiting 15s for rate-limited RPC before publishAndFund...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+    }
 
     // Step 2: Build reward struct
     const reward = {

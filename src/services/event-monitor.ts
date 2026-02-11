@@ -23,6 +23,13 @@ export interface MonitorAddresses {
   prover: Address;
 }
 
+// Chains with rate-limited free RPCs that need minimal RPC calls per poll
+const RATE_LIMITED_CHAINS: SupportedChainName[] = ['polygon', 'ethereum', 'ronin'];
+
+function isRateLimitedChain(chainName: SupportedChainName): boolean {
+  return RATE_LIMITED_CHAINS.includes(chainName);
+}
+
 export class EventMonitor {
   private svmMonitor: SvmEventMonitor;
 
@@ -32,10 +39,6 @@ export class EventMonitor {
 
   /**
    * Wait for IntentFulfilled event on destination chain
-   * @param intentHash - The intent hash to watch for
-   * @param chainName - Destination chain (base, arbitrum, or solana)
-   * @param inboxAddress - From quote response (contracts.destinationPortal)
-   * @param options - Polling options (interval, timeout)
    */
   async waitForFulfilled(
     intentHash: Hash,
@@ -53,7 +56,47 @@ export class EventMonitor {
 
     // EVM chain monitoring
     const client = getPublicClient(chainName);
-    const startBlock = await client.getBlockNumber();
+
+    // For rate-limited chains: single range query per poll (2 RPC calls: getBlockNumber + getLogs)
+    if (isRateLimitedChain(chainName)) {
+      let lastCheckedBlock = await client.getBlockNumber();
+      log.info({ chainName, startBlock: lastCheckedBlock }, 'Using range polling for rate-limited chain');
+      return pollUntil(async () => {
+        try {
+          const currentBlock = await client.getBlockNumber();
+          if (currentBlock < lastCheckedBlock) {
+            return null;
+          }
+          log.info({ chainName, from: lastCheckedBlock, to: currentBlock, range: Number(currentBlock - lastCheckedBlock) }, 'Polling range');
+          const logs = await client.getLogs({
+            address: inboxAddress,
+            event: INBOX_ABI[0],
+            args: { intentHash },
+            fromBlock: lastCheckedBlock,
+            toBlock: currentBlock,
+          });
+
+          if (logs.length > 0) {
+            const logEntry = logs[0];
+            log.info({ intentHash, blockNumber: logEntry.blockNumber }, 'IntentFulfilled found');
+            return {
+              log: logEntry,
+              blockNumber: logEntry.blockNumber!,
+              transactionHash: logEntry.transactionHash!,
+              args: logEntry.args as Record<string, unknown>,
+            };
+          }
+          lastCheckedBlock = currentBlock + 1n;
+        } catch (error) {
+          log.warn({ error, chainName }, 'RPC error on rate-limited chain, retrying...');
+        }
+        return null;
+      }, options);
+    }
+
+    // For other chains: Use lookback range
+    const currentBlock = await client.getBlockNumber();
+    const startBlock = currentBlock > 100n ? currentBlock - 100n : 0n;
 
     return pollUntil(async () => {
       const logs = await client.getLogs({
@@ -80,10 +123,6 @@ export class EventMonitor {
 
   /**
    * Poll for IntentProven event on source chain
-   * @param intentHash - The intent hash to watch for
-   * @param chainName - Source chain (optimism or solana)
-   * @param proverAddress - From quote response (contracts.prover)
-   * @param options - Polling options (interval, timeout)
    */
   async pollForProven(
     intentHash: Hash,
@@ -101,7 +140,46 @@ export class EventMonitor {
 
     // EVM chain monitoring
     const client = getPublicClient(chainName);
-    const startBlock = await client.getBlockNumber();
+
+    // For rate-limited chains: single range query per poll
+    if (isRateLimitedChain(chainName)) {
+      let lastCheckedBlock = await client.getBlockNumber();
+      log.info({ chainName, startBlock: lastCheckedBlock }, 'Using range polling for rate-limited chain (proven)');
+      return pollUntil(async () => {
+        try {
+          const currentBlock = await client.getBlockNumber();
+          if (currentBlock < lastCheckedBlock) {
+            return null;
+          }
+          const logs = await client.getLogs({
+            address: proverAddress,
+            event: PROVER_ABI[0],
+            args: { intentHash },
+            fromBlock: lastCheckedBlock,
+            toBlock: currentBlock,
+          });
+
+          if (logs.length > 0) {
+            const logEntry = logs[0];
+            log.info({ intentHash, blockNumber: logEntry.blockNumber }, 'IntentProven found');
+            return {
+              log: logEntry,
+              blockNumber: logEntry.blockNumber!,
+              transactionHash: logEntry.transactionHash!,
+              args: logEntry.args as Record<string, unknown>,
+            };
+          }
+          lastCheckedBlock = currentBlock + 1n;
+        } catch (error) {
+          log.warn({ error, chainName }, 'RPC error on rate-limited chain, retrying...');
+        }
+        return null;
+      }, options);
+    }
+
+    // For other chains: Use lookback range
+    const currentBlock = await client.getBlockNumber();
+    const startBlock = currentBlock > 10n ? currentBlock - 10n : 0n;
 
     return pollUntil(async () => {
       const logs = await client.getLogs({
@@ -128,10 +206,6 @@ export class EventMonitor {
 
   /**
    * Poll for IntentWithdrawn event on source chain
-   * @param intentHash - The intent hash to watch for
-   * @param chainName - Source chain (optimism or solana)
-   * @param intentSourceAddress - From quote response (contracts.sourcePortal)
-   * @param options - Polling options (interval, timeout)
    */
   async pollForWithdrawn(
     intentHash: Hash,
@@ -149,7 +223,55 @@ export class EventMonitor {
 
     // EVM chain monitoring
     const client = getPublicClient(chainName);
-    const startBlock = await client.getBlockNumber();
+
+    // For rate-limited chains: single range query per poll
+    if (isRateLimitedChain(chainName)) {
+      let lastCheckedBlock = await client.getBlockNumber();
+      // Start 50 blocks back to catch events that happened between proof and now
+      lastCheckedBlock = lastCheckedBlock > 50n ? lastCheckedBlock - 50n : 0n;
+      log.info({ chainName, startBlock: lastCheckedBlock }, 'Using range polling for rate-limited chain (withdrawn)');
+      return pollUntil(async () => {
+        try {
+          const currentBlock = await client.getBlockNumber();
+          if (currentBlock < lastCheckedBlock) {
+            return null;
+          }
+          log.info({ chainName, from: lastCheckedBlock, to: currentBlock, range: Number(currentBlock - lastCheckedBlock) }, 'Polling withdrawn range');
+          const logs = await client.getLogs({
+            address: intentSourceAddress,
+            event: INTENT_SOURCE_ABI[0],
+            args: { claimant: undefined },
+            fromBlock: lastCheckedBlock,
+            toBlock: currentBlock,
+          });
+          log.info({ chainName, logsFound: logs.length }, 'Logs found for withdrawn');
+
+          const matchingLogs = logs.filter(
+            (l) => (l.args as Record<string, unknown>).intentHash === intentHash
+          );
+          log.info({ chainName, matchingLogs: matchingLogs.length, intentHash }, 'Matching logs after filter');
+
+          if (matchingLogs.length > 0) {
+            const logEntry = matchingLogs[0];
+            log.info({ intentHash, blockNumber: logEntry.blockNumber }, 'IntentWithdrawn found');
+            return {
+              log: logEntry,
+              blockNumber: logEntry.blockNumber!,
+              transactionHash: logEntry.transactionHash!,
+              args: logEntry.args as Record<string, unknown>,
+            };
+          }
+          lastCheckedBlock = currentBlock + 1n;
+        } catch (error) {
+          log.warn({ error, chainName }, 'RPC error on rate-limited chain, retrying...');
+        }
+        return null;
+      }, options);
+    }
+
+    // For other chains: Use lookback range
+    const currentBlock = await client.getBlockNumber();
+    const startBlock = currentBlock > 10n ? currentBlock - 10n : 0n;
 
     return pollUntil(async () => {
       const logs = await client.getLogs({
