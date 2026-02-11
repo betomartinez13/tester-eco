@@ -5,13 +5,14 @@ import { IntentPublisher } from '../../src/services/intent-publisher.js';
 import { SolverClient, isQuoteSuccess } from '../../src/clients/solver-client.js';
 import { getConfig } from '../../src/config/index.js';
 import { privateKeyToAccount } from 'viem/accounts';
-import { getChainId, type SupportedChainName } from '../../src/config/chains.js';
-import { extractUsdcAddresses } from '../../src/utils/chain-utils.js';
+import { type SupportedChainName } from '../../src/config/chains.js';
+import { extractUsdcAddresses, mapChainName } from '../../src/utils/chain-utils.js';
 import type { IntentData, IntentJourney, QuoteData } from '../../src/types/intent.js';
 import type { Address, Hex } from 'viem';
 
-// USDC addresses will be fetched dynamically from solver API
+// USDC addresses and chain IDs fetched dynamically from solver API
 let USDC_ADDRESSES: Record<SupportedChainName, Address>;
+let CHAIN_IDS: Record<SupportedChainName, number> = {} as Record<SupportedChainName, number>;
 
 interface TestIntentParams {
   sourceChain: SupportedChainName;
@@ -43,8 +44,14 @@ describeE2E('Parallel Intent Execution', () => {
     const chains = await solverClient.getBlockchainChains();
     console.log(`Found ${chains.length} supported chains: ${chains.map(c => c.chainName).join(', ')}`);
 
-    // Extract USDC addresses dynamically
+    // Extract USDC addresses and chain IDs dynamically
     USDC_ADDRESSES = extractUsdcAddresses(chains);
+    for (const chain of chains) {
+      const name = mapChainName(chain.chainName);
+      if (name) {
+        CHAIN_IDS[name] = chain.chainId;
+      }
+    }
     console.log('USDC addresses loaded for:', Object.keys(USDC_ADDRESSES).join(', '));
 
     const config = getConfig();
@@ -67,8 +74,8 @@ describeE2E('Parallel Intent Execution', () => {
 
     // Get quote from solver
     const quoteRequest = solverClient.buildQuoteRequest({
-      sourceChainID: getChainId(params.sourceChain),
-      destinationChainID: getChainId(params.destinationChain),
+      sourceChainID: CHAIN_IDS[params.sourceChain],
+      destinationChainID: CHAIN_IDS[params.destinationChain],
       sourceToken,
       destinationToken: destToken,
       sourceAmount: params.amount,
@@ -81,11 +88,22 @@ describeE2E('Parallel Intent Execution', () => {
       throw new Error(`Quote failed: ${JSON.stringify(quoteResponse.validations.failed)}`);
     }
 
+    // Fix deadline if it's in the past (solver API bug)
+    const apiDeadline = quoteResponse.quoteResponses[0].deadline;
+    const now = Math.floor(Date.now() / 1000);
+    console.log(`🔍 DEBUG: API deadline: ${apiDeadline}, Current time: ${now}, Expired: ${apiDeadline <= now}`);
+    const validDeadline = apiDeadline > now ? apiDeadline : now + 3600; // Use API deadline if valid, else 1 hour from now
+
+    if (apiDeadline <= now) {
+      console.log(`⚠️ Warning: API returned expired deadline ${apiDeadline} (current: ${now}), using ${validDeadline}`);
+    }
+    console.log(`🔍 DEBUG: Using deadline: ${validDeadline}`);
+
     const quote: QuoteData = {
       sourceAmount: quoteResponse.quoteResponses[0].sourceAmount,
       destinationAmount: quoteResponse.quoteResponses[0].destinationAmount,
       encodedRoute: quoteResponse.quoteResponses[0].encodedRoute as Hex,
-      deadline: quoteResponse.quoteResponses[0].deadline,
+      deadline: validDeadline,
       contracts: {
         sourcePortal: quoteResponse.contracts.sourcePortal as Address,
         destinationPortal: quoteResponse.contracts.destinationPortal as Address,
