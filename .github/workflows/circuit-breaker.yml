@@ -1,0 +1,81 @@
+name: Circuit Breaker E2E
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: 'Number of routes to publish in parallel'
+        required: false
+        default: '3'
+
+jobs:
+  circuit-breaker:
+    name: Route Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Circuit Breaker
+        env:
+          # Solver
+          CB_SOLVER_URL: ${{ secrets.CB_SOLVER_URL }}
+
+          # Routes file (relative to repo root)
+          CB_ROUTES_FILE: tests/circuit-breaker/routes.json
+
+          # Wallet
+          CB_WALLET_PRIVATE_KEY: ${{ secrets.CB_WALLET_PRIVATE_KEY }}
+          CB_WALLET_RECIPIENT: ${{ secrets.CB_WALLET_RECIPIENT }}
+
+          # RPC URLs (JSON object as string)
+          CB_RPC_URLS: ${{ secrets.CB_RPC_URLS }}
+
+          # Solana
+          CB_SOLANA_PRIVATE_KEY: ${{ secrets.CB_SOLANA_PRIVATE_KEY }}
+
+          # Test settings
+          CB_TEST_AMOUNT: '0.01'
+          CB_PUBLISH_CONCURRENCY: ${{ inputs.concurrency || '3' }}
+
+          # Timeouts (ms)
+          CB_TIMEOUT_PUBLISH_MS: '60000'
+          CB_TIMEOUT_FULFILLMENT_WAIT_MS: '300000'
+          CB_TIMEOUT_FULFILLMENT_VERIFY_MS: '60000'
+          CB_TIMEOUT_PROVING_WAIT_MS: '600000'
+          CB_TIMEOUT_PROVING_VERIFY_MS: '60000'
+
+          # Polling
+          CB_POLL_INITIAL_MS: '15000'
+          CB_POLL_MULTIPLIER: '1.5'
+          CB_POLL_MAX_MS: '60000'
+
+          # Reporting
+          CB_REPORT_PATH: circuit-breaker-report.json
+          CB_ALERT_ENDPOINT: ${{ secrets.CB_ALERT_ENDPOINT }}
+          CB_ALERT_AUTH_HEADER: ${{ secrets.CB_ALERT_AUTH_HEADER }}
+          CB_ENVIRONMENT: production
+
+        run: npm run test:circuit-breaker
+
+      - name: Upload Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: circuit-breaker-report-${{ github.run_id }}
+          path: circuit-breaker-report.json
+          retention-days: 30
