@@ -1,7 +1,19 @@
 import fs from 'node:fs';
 import type { CircuitBreakerConfig } from './config.js';
 import { RoutesFileSchema, type RouteDefinition } from '../schemas/route.schema.js';
-import type { ChainDataMap, ChainData } from './types.js';
+import type { ChainDataMap } from './types.js';
+import { getSolanaKeypair, SOLANA_CHAIN_ID } from './clients.js';
+
+const QUOTES_V3_URL = 'https://quotes.eco.com/api/v3/quotes/exactIn';
+
+/** Returns EVM address for EVM chains, Solana Base58 pubkey for Solana */
+function getAddressForChain(chainId: number, config: CircuitBreakerConfig): string {
+  if (chainId === SOLANA_CHAIN_ID) {
+    const keypair = getSolanaKeypair(config);
+    return keypair.publicKey.toBase58();
+  }
+  return config.wallet.recipientAddress;
+}
 
 interface SolverChainToken {
   address: string;
@@ -15,15 +27,34 @@ interface SolverChain {
   tokens: SolverChainToken[];
 }
 
-interface SolverQuoteContracts {
+interface V3QuoteContracts {
   sourcePortal: string;
   destinationPortal: string;
   prover: string;
 }
 
-interface SolverQuoteSuccess {
-  quoteResponses: unknown[];
-  contracts: SolverQuoteContracts;
+interface V3QuoteResponse {
+  sourceAmount: string;
+  destinationAmount: string;
+  deadline: number;
+  encodedRoute: string;
+  fees: { amount: string }[];
+}
+
+interface V3QuoteData {
+  contracts: V3QuoteContracts;
+  quoteResponse: V3QuoteResponse;
+}
+
+interface V3QuoteResult {
+  quoteID: string;
+  quoteData: V3QuoteData;
+}
+
+interface V3Response {
+  data?: V3QuoteResult[];
+  statusCode?: number;
+  errorMessage?: string;
 }
 
 /**
@@ -33,6 +64,41 @@ export function loadRoutes(config: CircuitBreakerConfig): RouteDefinition[] {
   const raw = fs.readFileSync(config.routes.file, 'utf-8');
   const parsed = JSON.parse(raw);
   return RoutesFileSchema.parse(parsed);
+}
+
+async function callQuotesV3(
+  sourceChainId: number,
+  destinationChainId: number,
+  sourceToken: string,
+  destinationToken: string,
+  sourceAmount: string,
+  funder: string,
+  recipient: string,
+): Promise<V3Response> {
+  const res = await fetch(QUOTES_V3_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dAppID: 'circuit-breaker',
+      intentExecutionTypes: ['SELF_PUBLISH'],
+      quoteRequest: {
+        sourceChainID: sourceChainId,
+        destinationChainID: destinationChainId,
+        sourceToken,
+        destinationToken,
+        sourceAmount,
+        funder,
+        recipient,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Quote request failed (${res.status}): ${text}`);
+  }
+
+  return res.json() as Promise<V3Response>;
 }
 
 /**
@@ -67,8 +133,8 @@ export async function fetchChainData(
   }
 
   // 2. Fetch portal addresses via quote for each unique source chain
-  const walletAddress = config.wallet.recipientAddress;
   const seenSourceChains = new Set<number>();
+  const sourceAmountStr = String(Math.round(parseFloat(config.test.amount) * 1e6));
 
   for (const route of routes) {
     const srcId = route.sourceChainId;
@@ -76,40 +142,35 @@ export async function fetchChainData(
     seenSourceChains.add(srcId);
 
     try {
-      const quoteRes = await fetch(`${config.solver.url}/api/v2/quote/reverse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dAppID: 'circuit-breaker',
-          quoteID: `cb-discovery-${srcId}-${Date.now()}`,
-          intentExecutionTypes: ['SELF_PUBLISH'],
-          quoteRequest: {
-            sourceChainID: route.sourceChainId,
-            destinationChainID: route.destinationChainId,
-            sourceToken: route.sourceToken,
-            destinationToken: route.destinationToken,
-            sourceAmount: String(Math.round(parseFloat(config.test.amount) * 1e6)),
-            funder: walletAddress,
-            recipient: walletAddress,
-          },
-        }),
-      });
+      const funder = getAddressForChain(route.sourceChainId, config);
+      const recipient = getAddressForChain(route.destinationChainId, config);
 
-      if (!quoteRes.ok) continue;
-      const quoteData = (await quoteRes.json()) as SolverQuoteSuccess;
-      if (!quoteData.contracts) continue;
+      const data = await callQuotesV3(
+        route.sourceChainId,
+        route.destinationChainId,
+        route.sourceToken,
+        route.destinationToken,
+        sourceAmountStr,
+        funder,
+        recipient,
+      );
+
+      const first = data.data?.[0];
+      if (!first?.quoteData?.contracts) continue;
+
+      const { contracts } = first.quoteData;
 
       // Update source chain portal address
       const srcData = map.get(srcId);
       if (srcData && !srcData.portalAddress) {
-        map.set(srcId, { ...srcData, portalAddress: quoteData.contracts.sourcePortal });
+        map.set(srcId, { ...srcData, portalAddress: contracts.sourcePortal });
       }
 
       // Update destination chain portal address
       const dstId = route.destinationChainId;
       const dstData = map.get(dstId);
       if (dstData && !dstData.portalAddress) {
-        map.set(dstId, { ...dstData, portalAddress: quoteData.contracts.destinationPortal });
+        map.set(dstId, { ...dstData, portalAddress: contracts.destinationPortal });
       }
     } catch {
       // Non-fatal: portal address may still be discovered from another route
@@ -120,7 +181,8 @@ export async function fetchChainData(
 }
 
 /**
- * Fetch a live quote for a specific route from the solver
+ * Fetch a live quote for a specific route from the solver using v3 exactIn endpoint.
+ * The sourceAmount comes directly from the quote response.
  */
 export async function fetchQuote(
   config: CircuitBreakerConfig,
@@ -132,45 +194,36 @@ export async function fetchQuote(
     deadline: number;
     encodedRoute: string;
   };
-  contracts: SolverQuoteContracts;
+  contracts: V3QuoteContracts;
 }> {
-  const walletAddress = config.wallet.recipientAddress;
+  const funder = getAddressForChain(route.sourceChainId, config);
+  const recipient = getAddressForChain(route.destinationChainId, config);
   const sourceAmountStr = String(Math.round(parseFloat(config.test.amount) * 1e6));
 
-  const res = await fetch(`${config.solver.url}/api/v2/quote/reverse`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      dAppID: 'circuit-breaker',
-      quoteID: `cb-${route.sourceChainId}-${route.destinationChainId}-${Date.now()}`,
-      intentExecutionTypes: ['SELF_PUBLISH'],
-      quoteRequest: {
-        sourceChainID: route.sourceChainId,
-        destinationChainID: route.destinationChainId,
-        sourceToken: route.sourceToken,
-        destinationToken: route.destinationToken,
-        sourceAmount: sourceAmountStr,
-        funder: walletAddress,
-        recipient: walletAddress,
-      },
-    }),
-  });
+  const data = await callQuotesV3(
+    route.sourceChainId,
+    route.destinationChainId,
+    route.sourceToken,
+    route.destinationToken,
+    sourceAmountStr,
+    funder,
+    recipient,
+  );
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Quote failed (${res.status}): ${text}`);
+  const first = data.data?.[0];
+  if (!first?.quoteData?.contracts || !first?.quoteData?.quoteResponse) {
+    throw new Error(`Quote returned no results: ${JSON.stringify(data)}`);
   }
 
-  const data = (await res.json()) as SolverQuoteSuccess & { validations?: { failed: unknown[] } };
-  if (!data.contracts || !data.quoteResponses || data.quoteResponses.length === 0) {
-    throw new Error(`Quote rejected: ${JSON.stringify((data as { validations?: { failed: unknown[] } }).validations?.failed ?? data)}`);
-  }
+  const { contracts, quoteResponse } = first.quoteData;
 
-  const quoteItem = data.quoteResponses[0] as {
-    sourceAmount: string;
-    destinationAmount: string;
-    deadline: number;
-    encodedRoute: string;
+  return {
+    quoteItem: {
+      sourceAmount: quoteResponse.sourceAmount,
+      destinationAmount: quoteResponse.destinationAmount,
+      deadline: quoteResponse.deadline,
+      encodedRoute: quoteResponse.encodedRoute,
+    },
+    contracts,
   };
-  return { quoteItem, contracts: data.contracts };
 }
