@@ -1,5 +1,4 @@
 import type { Hex, Address } from 'viem';
-import { decodeEventLog } from 'viem';
 import type { CircuitBreakerConfig } from './config.js';
 import type { RouteDefinition } from '../schemas/route.schema.js';
 import {
@@ -53,6 +52,7 @@ const PORTAL_PUBLISH_ABI = [
           },
         ],
       },
+      { name: 'allowPartial', type: 'bool' },
     ],
     name: 'publishAndFund',
     outputs: [],
@@ -97,6 +97,38 @@ export async function publishIntent(
   return publishEvmIntent(config, route);
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Poll for a transaction receipt using short intervals, bypassing viem's default
+ * watchBlockNumber logic which can fail on load-balanced RPCs where the backend
+ * that receives the tx is different from the one queried for the receipt.
+ */
+async function waitForReceiptWithRetry(
+  publicClient: ReturnType<typeof import('./clients.js').getPublicClient>,
+  hash: Hex,
+  chainId: number,
+): Promise<ReturnType<typeof publicClient.waitForTransactionReceipt>> {
+  // For slow/volatile chains, use short polling intervals to find receipts quickly
+  const pollInterval = isRateLimitedChain(chainId) ? 3_000 : 2_000;
+  const timeoutMs = isRateLimitedChain(chainId) ? 300_000 : 60_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const receipt = await publicClient.getTransactionReceipt({ hash });
+      if (receipt) return receipt as any;
+    } catch {
+      // not found yet, keep polling
+    }
+    await new Promise((r) => setTimeout(r, pollInterval));
+  }
+
+  throw new Error(
+    `Transaction receipt with hash "${hash}" could not be found after ${timeoutMs / 1000}s`,
+  );
+}
+
 // ─── EVM Source ───────────────────────────────────────────────────────────────
 
 async function publishEvmIntent(
@@ -115,22 +147,62 @@ async function publishEvmIntent(
   const proverAddress = contracts.prover as Address;
   const sourceAmount = BigInt(quoteItem.sourceAmount);
 
-  // 1. Approve token spending
-  const approveNonce = await publicClient.getTransactionCount({ address: funder });
-  const approveTx = await walletClient.writeContract({
-    address: route.sourceToken as Address,
-    abi: ERC20_APPROVE_ABI,
-    functionName: 'approve',
-    args: [sourcePortal, sourceAmount],
-    nonce: approveNonce,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: approveTx });
+  // Helper: get the next usable nonce, retrying if the RPC node is lagging
+  async function getNextNonce(): Promise<number> {
+    // Try pending first; fall back to latest if unsupported
+    try {
+      return await publicClient.getTransactionCount({ address: funder, blockTag: 'pending' });
+    } catch {
+      return await publicClient.getTransactionCount({ address: funder });
+    }
+  }
+
+  // For volatile chains (Polygon), fetch current gas price and apply a 2x multiplier
+  // to ensure txs are included promptly rather than sitting in mempool
+  async function getGasOverrides(): Promise<{ maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint } | undefined> {
+    if (!isRateLimitedChain(sourceChainId)) return undefined;
+    try {
+      const gasPrice = await publicClient.getGasPrice();
+      // 2x multiplier to handle volatile gas markets
+      return { maxFeePerGas: gasPrice * 2n, maxPriorityFeePerGas: 50n * 10n ** 9n };
+    } catch {
+      return undefined;
+    }
+  }
+
+  // 1. Approve token spending (retry nonce if RPC returns stale value)
+  let approveNonce = await getNextNonce();
+  const gasOverrides = await getGasOverrides();
+  let approveTx: Hex;
+  while (true) {
+    try {
+      approveTx = await walletClient.writeContract({
+        address: route.sourceToken as Address,
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [sourcePortal, sourceAmount],
+        nonce: approveNonce,
+        ...gasOverrides,
+      });
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('nonce') && msg.toLowerCase().includes('lower')) {
+        approveNonce++;
+        continue;
+      }
+      throw err;
+    }
+  }
+  // Rate-limited chains (Polygon) use custom polling to work around load-balanced RPC
+  // propagation delays (tx submitted to backend A, receipt queried from backend B)
+  await waitForReceiptWithRetry(publicClient, approveTx!, sourceChainId);
 
   if (isRateLimitedChain(sourceChainId)) {
     await new Promise((resolve) => setTimeout(resolve, 15_000));
   }
 
-  // 2. Call Portal.publishAndFund()
+  // 2. Call Portal.publishAndFund() (retry nonce if RPC returns stale value)
   const reward = {
     deadline: BigInt(quoteItem.deadline),
     creator: funder,
@@ -139,36 +211,47 @@ async function publishEvmIntent(
     tokens: [{ token: route.sourceToken as Address, amount: sourceAmount }],
   };
 
-  const publishNonce = await publicClient.getTransactionCount({ address: funder });
-  const publishTx = await walletClient.writeContract({
-    address: sourcePortal,
-    abi: PORTAL_PUBLISH_ABI,
-    functionName: 'publishAndFund',
-    args: [BigInt(destinationChainId), quoteItem.encodedRoute as Hex, reward],
-    nonce: publishNonce,
-  });
+  let publishNonce = await getNextNonce();
+  let publishTx: Hex;
+  while (true) {
+    try {
+      publishTx = await walletClient.writeContract({
+        address: sourcePortal,
+        abi: PORTAL_PUBLISH_ABI,
+        functionName: 'publishAndFund',
+        args: [BigInt(destinationChainId), quoteItem.encodedRoute as Hex, reward, false],
+        nonce: publishNonce,
+        ...gasOverrides,
+      });
+      break;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('nonce') && msg.toLowerCase().includes('lower')) {
+        publishNonce++;
+        continue;
+      }
+      throw err;
+    }
+  }
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: publishTx });
+  const receipt = await waitForReceiptWithRetry(publicClient, publishTx, sourceChainId);
 
-  // 3. Extract intentHash from IntentCreated event
+  // 3. Extract intentHash from portal event log.
+  // The intentHash is always topics[1] (first indexed param) in logs emitted by the portal.
+  // We match by portal address to be safe across contract versions.
   let intentHash: Hex | undefined;
   for (const logEntry of receipt.logs) {
-    try {
-      const decoded = decodeEventLog({
-        abi: PORTAL_PUBLISH_ABI,
-        eventName: 'IntentCreated',
-        data: logEntry.data,
-        topics: logEntry.topics,
-      });
-      intentHash = (decoded.args as { intentHash: Hex }).intentHash;
+    if (
+      logEntry.address.toLowerCase() === sourcePortal.toLowerCase() &&
+      logEntry.topics.length >= 2
+    ) {
+      intentHash = logEntry.topics[1] as Hex;
       break;
-    } catch {
-      // not this event
     }
   }
 
   if (!intentHash) {
-    throw new Error(`IntentCreated event not found in tx ${publishTx}`);
+    throw new Error(`Portal event not found in tx ${publishTx}`);
   }
 
   return {
