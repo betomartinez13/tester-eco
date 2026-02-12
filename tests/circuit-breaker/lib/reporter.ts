@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { CircuitBreakerConfig } from './config.js';
 import type { TestStateManager } from './types.js';
@@ -25,8 +26,18 @@ export async function writeReport(
   });
 
   if (config.reporting.reportPath) {
-    fs.writeFileSync(config.reporting.reportPath, JSON.stringify(report, null, 2), 'utf-8');
-    console.log(`\n📄 Report written to ${config.reporting.reportPath}`);
+    const reportDir = config.reporting.reportPath;
+    fs.mkdirSync(reportDir, { recursive: true });
+
+    const safeTimestamp = report.timestamp.replace(/[:.]/g, '-');
+    const timestampedFile = path.join(reportDir, `circuit-breaker-${safeTimestamp}.json`);
+    const latestFile = path.join(reportDir, 'latest.json');
+    const content = JSON.stringify(report, null, 2);
+
+    fs.writeFileSync(timestampedFile, content, 'utf-8');
+    fs.writeFileSync(latestFile, content, 'utf-8');
+    console.log(`\n📄 Report written to ${timestampedFile}`);
+    console.log(`📄 Latest report at ${latestFile}`);
   }
 
   // Send alert if any routes failed

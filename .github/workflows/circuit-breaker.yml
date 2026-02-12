@@ -65,7 +65,7 @@ jobs:
           CB_POLL_MAX_MS: '60000'
 
           # Reporting
-          CB_REPORT_PATH: circuit-breaker-report.json
+          CB_REPORT_PATH: circuit-breaker-reports
           CB_ALERT_ENDPOINT: ${{ secrets.CB_ALERT_ENDPOINT }}
           CB_ALERT_AUTH_HEADER: ${{ secrets.CB_ALERT_AUTH_HEADER }}
           CB_ENVIRONMENT: production
@@ -77,5 +77,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: circuit-breaker-report-${{ github.run_id }}
-          path: circuit-breaker-report.json
+          path: circuit-breaker-reports/
           retention-days: 30
