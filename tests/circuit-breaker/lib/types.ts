@@ -14,6 +14,7 @@ export interface RouteTestState {
   publishTxHash?: Hex;
   publishedAt?: number;
   publishError?: string;
+  publishedProverAddress?: string;
 
   // Phase 2
   fulfilled?: boolean;
@@ -68,7 +69,7 @@ export class TestStateManager {
 
   recordPublish(
     route: RouteDefinition,
-    result: { intentHash: Hex; publishTxHash: Hex } | { error: string },
+    result: { intentHash: Hex; publishTxHash: Hex; proverAddress?: string } | { error: string },
   ): void {
     const routeKey = makeRouteKey(route);
     const state = this.states.get(routeKey)!;
@@ -80,6 +81,7 @@ export class TestStateManager {
       state.intentHash = result.intentHash;
       state.publishTxHash = result.publishTxHash;
       state.publishedAt = Date.now();
+      state.publishedProverAddress = result.proverAddress;
     }
   }
 
@@ -163,7 +165,11 @@ export class TestStateManager {
       destinationChainId: s.route.destinationChainId,
       sourceToken: s.route.sourceToken,
       destinationToken: s.route.destinationToken,
-      status: s.status === 'proven' ? 'passed' : (s.status as RouteResult['status']),
+      status: s.status === 'proven'
+        ? 'passed'
+        : s.status === 'fulfilled' || s.status === 'published'
+          ? 'proving_failed'
+          : (s.status as RouteResult['status']),
       publishTxHash: s.publishTxHash,
       fulfillmentTxHash: s.fulfillmentTxHash,
       provingTxHash: s.provingTxHash,

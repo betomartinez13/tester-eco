@@ -64,13 +64,6 @@
   },
   {
     "sourceChainId": 1399811149,
-    "destinationChainId": 1,
-    "sourceToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "destinationToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
-  },
-  {
-    "sourceChainId": 1399811149,
     "destinationChainId": 137,
     "sourceToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "destinationToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
@@ -81,62 +74,69 @@
     "destinationChainId": 1399811149,
     "sourceToken": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
     "destinationToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
     "sourceChainId": 8453,
     "destinationChainId": 1399811149,
     "sourceToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "destinationToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
     "sourceChainId": 42161,
     "destinationChainId": 1399811149,
     "sourceToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
     "destinationToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
-  },
-  {
-    "sourceChainId": 1,
-    "destinationChainId": 1399811149,
-    "sourceToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "destinationToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
     "sourceChainId": 137,
     "destinationChainId": 1399811149,
     "sourceToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     "destinationToken": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-    "proverAddress": "0x7cE7467adDCffB7E547826317c38C99D7F9F49fF"
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
-    "sourceChainId": 2020,
+    "sourceChainId": 137,
+    "destinationChainId": 10,
+    "sourceToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "destinationToken": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
+  },
+  {
+    "sourceChainId": 137,
     "destinationChainId": 8453,
-    "sourceToken": "0x0b7007c13325c48911f73a2dad5fa5dcbf808adc",
+    "sourceToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     "destinationToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "proverAddress": "0xdE87d7e06cff1E2bF7Bc90c82503C84D214B5614"
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
-    "sourceChainId": 2020,
-    "destinationChainId": 1,
-    "sourceToken": "0x0b7007c13325c48911f73a2dad5fa5dcbf808adc",
-    "destinationToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "proverAddress": "0xdE87d7e06cff1E2bF7Bc90c82503C84D214B5614"
+    "sourceChainId": 137,
+    "destinationChainId": 42161,
+    "sourceToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "destinationToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
+  },
+  {
+    "sourceChainId": 10,
+    "destinationChainId": 137,
+    "sourceToken": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "destinationToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
     "sourceChainId": 8453,
-    "destinationChainId": 2020,
+    "destinationChainId": 137,
     "sourceToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "destinationToken": "0x0b7007c13325c48911f73a2dad5fa5dcbf808adc",
-    "proverAddress": "0xdE87d7e06cff1E2bF7Bc90c82503C84D214B5614"
+    "destinationToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   },
   {
-    "sourceChainId": 1,
-    "destinationChainId": 2020,
-    "sourceToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    "destinationToken": "0x0b7007c13325c48911f73a2dad5fa5dcbf808adc",
-    "proverAddress": "0xdE87d7e06cff1E2bF7Bc90c82503C84D214B5614"
+    "sourceChainId": 42161,
+    "destinationChainId": 137,
+    "sourceToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "destinationToken": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    "proverAddress": "0x926ee8cf1ab25c0538a24CA933edA71A67B2bC69"
   }
 ]

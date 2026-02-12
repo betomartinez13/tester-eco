@@ -6,6 +6,9 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
+// Load .env before spawning so CB_ vars are available in the child process
+require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+
 module.exports = async function globalSetup() {
   const tsFile = path.join(__dirname, 'global-setup.ts');
   const rootDir = path.join(__dirname, '../../..');

@@ -66,6 +66,7 @@ describe('Circuit Breaker E2E', () => {
             stateManager.recordPublish(route, {
               intentHash: result.intentHash,
               publishTxHash: result.publishTxHash,
+              proverAddress: result.proverAddress,
             });
             portalAddressCache.set(routeKey, result.sourcePortal);
             console.log(
@@ -151,17 +152,10 @@ describe('Circuit Breaker E2E', () => {
         fulfilled.map(async (state) => {
           const routeKey = state.routeKey;
           try {
-            let sourcePortal = portalAddressCache.get(routeKey);
-            if (!sourcePortal) {
-              const { contracts } = await fetchQuote(config, state.route);
-              sourcePortal = contracts.sourcePortal;
-              portalAddressCache.set(routeKey, sourcePortal);
-            }
-
             const result = await waitForProven(
               config,
               state.route.sourceChainId,
-              sourcePortal,
+              state.publishedProverAddress ?? state.route.proverAddress,
               state.intentHash!,
             );
             stateManager.recordProving(state.route, {
