@@ -1,6 +1,7 @@
 import type { Hex, Address } from 'viem';
 import type { CircuitBreakerConfig } from './config.js';
 import { getPublicClient, SOLANA_CHAIN_ID } from './clients.js';
+import { waitForSvmFulfillment } from './svm-verifier.js';
 
 // getRewardStatus ABI fragment
 const GET_REWARD_STATUS_ABI = [
@@ -36,7 +37,7 @@ export async function waitForFulfillment(
   intentHash: Hex,
 ): Promise<{ status: RewardStatusValue; detectedAt: number }> {
   if (sourceChainId === SOLANA_CHAIN_ID) {
-    throw new Error('SVM fulfillment verification not yet supported');
+    return waitForSvmFulfillment(config, sourcePortal, intentHash);
   }
 
   const publicClient = getPublicClient(sourceChainId, config);
