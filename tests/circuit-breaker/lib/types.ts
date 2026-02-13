@@ -132,7 +132,7 @@ export class TestStateManager {
 
   getFulfilledIntents(): RouteTestState[] {
     return Array.from(this.states.values()).filter(
-      (s) => s.status === 'fulfilled',
+      (s) => s.status === 'fulfilled' || s.status === 'fulfillment_failed',
     );
   }
 
