@@ -66,6 +66,46 @@ export function loadRoutes(config: CircuitBreakerConfig): RouteDefinition[] {
   return RoutesFileSchema.parse(parsed);
 }
 
+/**
+ * Validate routes against chain data fetched from the solver.
+ * Routes with unknown chains or unsupported tokens are marked as skipped.
+ */
+export function validateRoutes(
+  routes: RouteDefinition[],
+  chainData: ChainDataMap,
+): { valid: RouteDefinition[]; skipped: { route: RouteDefinition; reason: string }[] } {
+  const valid: RouteDefinition[] = [];
+  const skipped: { route: RouteDefinition; reason: string }[] = [];
+
+  for (const route of routes) {
+    const srcChain = chainData.get(route.sourceChainId);
+    if (!srcChain) {
+      skipped.push({ route, reason: `Chain ${route.sourceChainId} not configured in solver` });
+      continue;
+    }
+
+    const dstChain = chainData.get(route.destinationChainId);
+    if (!dstChain) {
+      skipped.push({ route, reason: `Chain ${route.destinationChainId} not configured in solver` });
+      continue;
+    }
+
+    if (!srcChain.tokens.has(route.sourceToken.toLowerCase())) {
+      skipped.push({ route, reason: `Token ${route.sourceToken} not supported on chain ${route.sourceChainId}` });
+      continue;
+    }
+
+    if (!dstChain.tokens.has(route.destinationToken.toLowerCase())) {
+      skipped.push({ route, reason: `Token ${route.destinationToken} not supported on chain ${route.destinationChainId}` });
+      continue;
+    }
+
+    valid.push(route);
+  }
+
+  return { valid, skipped };
+}
+
 async function callQuotesV3(
   sourceChainId: number,
   destinationChainId: number,

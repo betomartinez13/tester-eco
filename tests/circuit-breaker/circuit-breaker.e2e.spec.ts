@@ -11,13 +11,15 @@
 
 import pMap from 'p-map';
 import { loadConfig } from './lib/config.js';
-import { loadRoutes, fetchChainData, fetchQuote } from './lib/route-fetcher.js';
+import { loadRoutes, fetchChainData, fetchQuote, validateRoutes } from './lib/route-fetcher.js';
 import { publishIntent } from './lib/intent-publisher.js';
 import { waitForFulfillment } from './lib/fulfillment-verifier.js';
 import { waitForProven } from './lib/proving-verifier.js';
+import { SOLANA_CHAIN_ID } from './lib/clients.js';
 import { writeReport } from './lib/reporter.js';
 import { TestStateManager, makeRouteKey } from './lib/types.js';
 import type { RouteDefinition } from './schemas/route.schema.js';
+import type { ChainDataMap } from './lib/types.js';
 
 const config = loadConfig();
 const stateManager = new TestStateManager();
@@ -27,6 +29,7 @@ const portalAddressCache = new Map<string, string>(); // routeKey → sourcePort
 
 describe('Circuit Breaker E2E', () => {
   let routes: RouteDefinition[];
+  let chainData: ChainDataMap;
 
   // ── Phase 0: Discovery ────────────────────────────────────────────────────
 
@@ -41,10 +44,21 @@ describe('Circuit Breaker E2E', () => {
       }
     });
 
-    it('fetches chain data from solver', async () => {
-      const chainData = await fetchChainData(config, routes);
+    it('fetches chain data and validates routes', async () => {
+      chainData = await fetchChainData(config, routes);
       expect(chainData.size).toBeGreaterThan(0);
       console.log(`\n🔗 Chain data loaded for ${chainData.size} chains`);
+
+      const total = routes.length;
+      const { valid, skipped } = validateRoutes(routes, chainData);
+
+      for (const { route, reason } of skipped) {
+        stateManager.skipRoute(route);
+        console.warn(`   ⏭️  Skipping ${makeRouteKey(route)}: ${reason}`);
+      }
+
+      routes = valid;
+      console.log(`   ${valid.length}/${total} routes passed validation`);
     });
   });
 
@@ -158,6 +172,7 @@ describe('Circuit Breaker E2E', () => {
               state.publishedProverAddress ?? state.route.proverAddress,
               state.intentHash!,
             );
+
             stateManager.recordProving(state.route, {
               provenAt: result.detectedAt,
             });
