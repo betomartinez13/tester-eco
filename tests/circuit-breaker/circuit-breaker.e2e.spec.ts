@@ -76,11 +76,13 @@ describe('Circuit Breaker E2E', () => {
           const routeKey = makeRouteKey(route);
           console.log(`   Publishing ${route.sourceChainId} → ${route.destinationChainId}...`);
           try {
+            const publishStartedAt = Date.now();
             const result = await publishIntent(config, route);
             stateManager.recordPublish(route, {
               intentHash: result.intentHash,
               publishTxHash: result.publishTxHash,
               proverAddress: result.proverAddress,
+              publishStartedAt,
             });
             portalAddressCache.set(routeKey, result.sourcePortal);
             console.log(

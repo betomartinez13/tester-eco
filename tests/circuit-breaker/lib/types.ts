@@ -12,6 +12,7 @@ export interface RouteTestState {
   quoteResponse?: unknown;
   intentHash?: Hex;
   publishTxHash?: Hex;
+  publishStartedAt?: number;
   publishedAt?: number;
   publishError?: string;
   publishedProverAddress?: string;
@@ -69,7 +70,7 @@ export class TestStateManager {
 
   recordPublish(
     route: RouteDefinition,
-    result: { intentHash: Hex; publishTxHash: Hex; proverAddress?: string } | { error: string },
+    result: { intentHash: Hex; publishTxHash: Hex; proverAddress?: string; publishStartedAt: number } | { error: string },
   ): void {
     const routeKey = makeRouteKey(route);
     const state = this.states.get(routeKey)!;
@@ -80,6 +81,7 @@ export class TestStateManager {
       state.status = 'published';
       state.intentHash = result.intentHash;
       state.publishTxHash = result.publishTxHash;
+      state.publishStartedAt = result.publishStartedAt;
       state.publishedAt = Date.now();
       state.publishedProverAddress = result.proverAddress;
     }
@@ -174,6 +176,15 @@ export class TestStateManager {
       fulfillmentTxHash: s.fulfillmentTxHash,
       provingTxHash: s.provingTxHash,
       intentHash: s.intentHash,
+      publishDurationMs: s.publishStartedAt && s.publishedAt
+        ? s.publishedAt - s.publishStartedAt
+        : undefined,
+      fulfillmentDurationMs: s.publishedAt && s.fulfilledAt
+        ? s.fulfilledAt - s.publishedAt
+        : undefined,
+      provingDurationMs: s.fulfilledAt && s.provenAt
+        ? s.provenAt - s.fulfilledAt
+        : undefined,
       totalDurationMs: s.totalDurationMs,
       error:
         s.publishError ?? s.fulfillmentError ?? s.provingError,
