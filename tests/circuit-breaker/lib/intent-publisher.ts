@@ -83,18 +83,37 @@ export interface PublishResult {
   proverAddress: string;
 }
 
+const PUBLISH_MAX_ATTEMPTS = 3;
+const PUBLISH_RETRY_DELAY_MS = 5_000;
+
 /**
  * Publish an intent for any supported route (EVM or SVM source).
  * Fetches a fresh quote, then routes to the appropriate publisher.
+ * Retries up to 3 attempts with a 5s delay to handle transient RPC failures.
  */
 export async function publishIntent(
   config: CircuitBreakerConfig,
   route: RouteDefinition,
 ): Promise<PublishResult> {
-  if (route.sourceChainId === SOLANA_CHAIN_ID) {
-    return publishSvmIntent(config, route);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= PUBLISH_MAX_ATTEMPTS; attempt++) {
+    try {
+      if (route.sourceChainId === SOLANA_CHAIN_ID) {
+        return await publishSvmIntent(config, route);
+      }
+      return await publishEvmIntent(config, route);
+    } catch (err) {
+      lastError = err;
+      if (attempt < PUBLISH_MAX_ATTEMPTS) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`   ⚠️  Publish attempt ${attempt}/${PUBLISH_MAX_ATTEMPTS} failed: ${msg} — retrying in ${PUBLISH_RETRY_DELAY_MS / 1000}s`);
+        await new Promise((r) => setTimeout(r, PUBLISH_RETRY_DELAY_MS));
+      }
+    }
   }
-  return publishEvmIntent(config, route);
+
+  throw lastError;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
