@@ -27,6 +27,16 @@ const ERC20_APPROVE_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  {
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    name: 'allowance',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const;
 
 const PORTAL_PUBLISH_ABI = [
@@ -189,36 +199,46 @@ async function publishEvmIntent(
     }
   }
 
-  // 1. Approve token spending (retry nonce if RPC returns stale value)
-  let approveNonce = await getNextNonce();
+  // 1. Approve token spending — use MaxUint256 so we never need to re-approve.
+  //    Skip entirely if existing allowance already covers the amount.
   const gasOverrides = await getGasOverrides();
-  let approveTx: Hex;
-  while (true) {
-    try {
-      approveTx = await walletClient.writeContract({
-        address: route.sourceToken as Address,
-        abi: ERC20_APPROVE_ABI,
-        functionName: 'approve',
-        args: [sourcePortal, sourceAmount],
-        nonce: approveNonce,
-        ...gasOverrides,
-      });
-      break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes('nonce') && msg.toLowerCase().includes('lower')) {
-        approveNonce++;
-        continue;
-      }
-      throw err;
-    }
-  }
-  // Rate-limited chains (Polygon) use custom polling to work around load-balanced RPC
-  // propagation delays (tx submitted to backend A, receipt queried from backend B)
-  await waitForReceiptWithRetry(publicClient, approveTx!, sourceChainId);
+  const currentAllowance = await publicClient.readContract({
+    address: route.sourceToken as Address,
+    abi: ERC20_APPROVE_ABI,
+    functionName: 'allowance',
+    args: [funder, sourcePortal],
+  }) as bigint;
 
-  if (isRateLimitedChain(sourceChainId)) {
-    await new Promise((resolve) => setTimeout(resolve, 15_000));
+  if (currentAllowance < sourceAmount) {
+    let approveNonce = await getNextNonce();
+    let approveTx: Hex;
+    while (true) {
+      try {
+        approveTx = await walletClient.writeContract({
+          address: route.sourceToken as Address,
+          abi: ERC20_APPROVE_ABI,
+          functionName: 'approve',
+          args: [sourcePortal, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+          nonce: approveNonce,
+          ...gasOverrides,
+        });
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.toLowerCase().includes('nonce') && msg.toLowerCase().includes('lower')) {
+          approveNonce++;
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Rate-limited chains (Polygon) use custom polling to work around load-balanced RPC
+    // propagation delays (tx submitted to backend A, receipt queried from backend B)
+    await waitForReceiptWithRetry(publicClient, approveTx!, sourceChainId);
+
+    if (isRateLimitedChain(sourceChainId)) {
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+    }
   }
 
   // 2. Call Portal.publishAndFund() (retry nonce if RPC returns stale value)
