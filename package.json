@@ -10,7 +10,7 @@
     "test:unit": "NODE_OPTIONS='--experimental-vm-modules' jest tests/unit",
     "test:integration": "NODE_OPTIONS='--experimental-vm-modules' jest tests/integration",
     "test:e2e": "NODE_OPTIONS='--experimental-vm-modules' jest tests/e2e --testTimeout=600000",
-    "test:circuit-breaker": "NODE_OPTIONS='--experimental-vm-modules' jest --config tests/circuit-breaker/jest.circuit-breaker.json",
+    "test:circuit-breaker": "NODE_OPTIONS='--experimental-vm-modules' jest --config tests/circuit-breaker/jest.circuit-breaker.json --forceExit",
     "test:coverage": "NODE_OPTIONS='--experimental-vm-modules' jest --coverage",
     "lint": "eslint src tests --ext .ts",
     "typecheck": "tsc --noEmit"
