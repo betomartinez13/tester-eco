@@ -70,7 +70,7 @@ jobs:
           CB_ALERT_AUTH_HEADER: ${{ secrets.CB_ALERT_AUTH_HEADER }}
           CB_ENVIRONMENT: production
 
-        run: npm run test:circuit-breaker -- --forceExit
+        run: npm run test:circuit-breaker
 
       - name: Upload Report
         if: always()
