@@ -1,25 +1,20 @@
 /**
  * Circuit Breaker E2E Route Validation
  *
- * Validates all cross-chain routes end-to-end:
- *   Phase 0: Discovery   - load routes, fetch chain data
- *   Phase 1: Publish     - send intents for all EVM-sourced routes (bounded concurrency)
- *   Phase 2: Fulfillment - poll getRewardStatus() until Fulfilled or Withdrawn
- *   Phase 3: Proving     - poll getRewardStatus() until Withdrawn
+ *   Phase 0: Discovery   - load routes, fetch chain data (beforeAll)
+ *   Phase 1: Publish     - one test per route via it.each (sequential)
+ *   Phase 2: Fulfillment - poll getRewardStatus() in parallel (Promise.allSettled)
+ *   Phase 3: Proving     - poll provenIntents() in parallel (Promise.allSettled)
  *   Phase 4: Report      - write JSON report, optionally send alert
  */
 
-import pMap from 'p-map';
 import { loadConfig } from './lib/config.js';
 import { loadRoutes, fetchChainData, fetchQuote, validateRoutes } from './lib/route-fetcher.js';
 import { publishIntent } from './lib/intent-publisher.js';
 import { waitForFulfillment } from './lib/fulfillment-verifier.js';
 import { waitForProven } from './lib/proving-verifier.js';
-import { SOLANA_CHAIN_ID } from './lib/clients.js';
 import { writeReport } from './lib/reporter.js';
 import { TestStateManager, makeRouteKey } from './lib/types.js';
-import type { RouteDefinition } from './schemas/route.schema.js';
-import type { ChainDataMap } from './lib/types.js';
 
 const config = loadConfig();
 const stateManager = new TestStateManager();
@@ -27,82 +22,68 @@ const stateManager = new TestStateManager();
 // Store portal addresses fetched during publish so we don't re-query in Phase 2/3
 const portalAddressCache = new Map<string, string>(); // routeKey → sourcePortal
 
+// Track routes that failed Phase 0 validation so Phase 1 can skip them
+const skippedRouteKeys = new Set<string>();
+
+// Load routes synchronously at module level — required for it.each registration
+const allRoutes = loadRoutes(config);
+for (const r of allRoutes) {
+  stateManager.initRoute(r);
+}
+
 describe('Circuit Breaker E2E', () => {
-  let routes: RouteDefinition[];
-  let chainData: ChainDataMap;
 
-  // ── Phase 0: Discovery ────────────────────────────────────────────────────
+  // ── Phase 0: Discovery (beforeAll) ────────────────────────────────────────
 
-  describe('Phase 0: Route Discovery', () => {
-    it('loads routes from file', () => {
-      routes = loadRoutes(config);
-      expect(routes.length).toBeGreaterThan(0);
-      console.log(`\n📋 Loaded ${routes.length} routes from ${config.routes.file}`);
-      for (const r of routes) {
-        console.log(`   ${r.sourceChainId} → ${r.destinationChainId}`);
-        stateManager.initRoute(r);
-      }
-    });
+  beforeAll(async () => {
+    console.log(`\n📋 Loaded ${allRoutes.length} routes from ${config.routes.file}`);
+    for (const r of allRoutes) {
+      console.log(`   ${r.sourceChainId} → ${r.destinationChainId}`);
+    }
 
-    it('fetches chain data and validates routes', async () => {
-      chainData = await fetchChainData(config, routes);
-      expect(chainData.size).toBeGreaterThan(0);
-      console.log(`\n🔗 Chain data loaded for ${chainData.size} chains`);
+    const chainData = await fetchChainData(config, allRoutes);
+    console.log(`\n🔗 Chain data loaded for ${chainData.size} chains`);
 
-      const total = routes.length;
-      const { valid, skipped } = validateRoutes(routes, chainData);
+    const { valid, skipped } = validateRoutes(allRoutes, chainData);
+    for (const { route, reason } of skipped) {
+      stateManager.skipRoute(route);
+      skippedRouteKeys.add(makeRouteKey(route));
+      console.warn(`   ⏭️  Skipping ${makeRouteKey(route)}: ${reason}`);
+    }
+    console.log(`   ${valid.length}/${allRoutes.length} routes passed validation`);
+  }, 60_000);
 
-      for (const { route, reason } of skipped) {
-        stateManager.skipRoute(route);
-        console.warn(`   ⏭️  Skipping ${makeRouteKey(route)}: ${reason}`);
-      }
-
-      routes = valid;
-      console.log(`   ${valid.length}/${total} routes passed validation`);
-    });
-  });
-
-  // ── Phase 1: Publish ──────────────────────────────────────────────────────
+  // ── Phase 1: Publish (one test per route) ─────────────────────────────────
 
   describe('Phase 1: Intent Publishing', () => {
-    it('publishes intents for all routes', async () => {
-      console.log(
-        `\n🚀 Publishing ${routes.length} intents (concurrency: ${config.test.publishConcurrency})`,
-      );
+    it.each(allRoutes)(
+      'publishes $sourceChainId→$destinationChainId',
+      async (route) => {
+        if (skippedRouteKeys.has(makeRouteKey(route))) return;
 
-      await pMap(
-        routes,
-        async (route) => {
-          const routeKey = makeRouteKey(route);
-          console.log(`   Publishing ${route.sourceChainId} → ${route.destinationChainId}...`);
-          try {
-            const publishStartedAt = Date.now();
-            const result = await publishIntent(config, route);
-            stateManager.recordPublish(route, {
-              intentHash: result.intentHash,
-              publishTxHash: result.publishTxHash,
-              proverAddress: result.proverAddress,
-              publishStartedAt,
-            });
-            portalAddressCache.set(routeKey, result.sourcePortal);
-            console.log(
-              `   ✅ Published ${routeKey} → intent ${result.intentHash.slice(0, 12)}...`,
-            );
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            stateManager.recordPublish(route, { error: message });
-            console.error(`   ❌ Failed to publish ${routeKey}: ${message}`);
-          }
-        },
-        { concurrency: config.test.publishConcurrency },
-      );
-
-      const published = stateManager.getPublishedIntents();
-      console.log(`\n   ${published.length}/${routes.length} intents published`);
-    });
+        const routeKey = makeRouteKey(route);
+        console.log(`\n🚀 Publishing ${route.sourceChainId} → ${route.destinationChainId}...`);
+        try {
+          const publishStartedAt = Date.now();
+          const result = await publishIntent(config, route);
+          stateManager.recordPublish(route, {
+            intentHash: result.intentHash,
+            publishTxHash: result.publishTxHash,
+            proverAddress: result.proverAddress,
+            publishStartedAt,
+          });
+          portalAddressCache.set(routeKey, result.sourcePortal);
+          console.log(`   ✅ Published ${routeKey} → intent ${result.intentHash.slice(0, 12)}...`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          stateManager.recordPublish(route, { error: message });
+          console.error(`   ❌ Failed to publish ${routeKey}: ${message}`);
+        }
+      },
+    );
   });
 
-  // ── Phase 2: Fulfillment ──────────────────────────────────────────────────
+  // ── Phase 2: Fulfillment (all routes in parallel) ─────────────────────────
 
   describe('Phase 2: Fulfillment Verification', () => {
     it('waits for all published intents to be fulfilled', async () => {
@@ -119,7 +100,6 @@ describe('Circuit Breaker E2E', () => {
         published.map(async (state) => {
           const routeKey = state.routeKey;
           try {
-            // Get portal address from cache (set during publish) or fetch fresh
             let sourcePortal = portalAddressCache.get(routeKey);
             if (!sourcePortal) {
               const { contracts } = await fetchQuote(config, state.route);
@@ -151,7 +131,7 @@ describe('Circuit Breaker E2E', () => {
     });
   });
 
-  // ── Phase 3: Proving ──────────────────────────────────────────────────────
+  // ── Phase 3: Proving (all routes in parallel) ─────────────────────────────
 
   describe('Phase 3: Proving Verification', () => {
     it('waits for all fulfilled intents to be proven (withdrawn)', async () => {
@@ -174,7 +154,6 @@ describe('Circuit Breaker E2E', () => {
               state.publishedProverAddress ?? state.route.proverAddress,
               state.intentHash!,
             );
-
             stateManager.recordProving(state.route, {
               provenAt: result.detectedAt,
             });
