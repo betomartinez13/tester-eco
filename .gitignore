@@ -5,6 +5,7 @@ dist/
 .env.example
 coverage/
 reports/
+circuit-breaker-reports/
 *.log
 .DS_Store
 
