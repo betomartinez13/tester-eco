@@ -9,6 +9,11 @@ circuit-breaker-reports/
 *.log
 .DS_Store
 check-balance.mjs
+CB_TRACKING.md
+circuit-breaker-e2e-spec.md
+tests/circuit-breaker/routes-single.json
+tests/circuit-breaker/routes-evm.json
+tests/circuit-breaker/routes-base-sol.json
 
 # Local Planning Docs
 thoughts/
