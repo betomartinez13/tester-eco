@@ -32,8 +32,8 @@ export function loadConfig(): CircuitBreakerConfig {
     },
     reporting: {
       reportPath: process.env.CB_REPORT_PATH,
-      alertEndpoint: process.env.CB_ALERT_ENDPOINT,
-      alertAuthHeader: process.env.CB_ALERT_AUTH_HEADER,
+      alertEndpoint: process.env.CB_ALERT_ENDPOINT || undefined,
+      alertAuthHeader: process.env.CB_ALERT_AUTH_HEADER || undefined,
     },
     rpc: {
       urls: JSON.parse(process.env.CB_RPC_URLS ?? '{}'),
