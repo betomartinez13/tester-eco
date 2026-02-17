@@ -53,7 +53,7 @@ jobs:
           CB_SOLANA_PRIVATE_KEY: ${{ secrets.CB_SOLANA_PRIVATE_KEY }}
 
           # Test settings
-          CB_TEST_AMOUNT: '0.01'
+          CB_TEST_AMOUNT: '0.1'
           CB_PUBLISH_CONCURRENCY: ${{ inputs.concurrency || '3' }}
 
           # Timeouts (ms)
