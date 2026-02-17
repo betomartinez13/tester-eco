@@ -9,6 +9,7 @@ circuit-breaker-reports/
 *.log
 .DS_Store
 check-balance.mjs
+debug-quote-request.mjs
 CB_TRACKING.md
 circuit-breaker-e2e-spec.md
 tests/circuit-breaker/routes-single.json
