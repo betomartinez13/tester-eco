@@ -2,7 +2,7 @@
 
 End-to-End testing system for the [Eco Routes](https://github.com/eco/eco-routes) protocol. Sends real (cents of) USDC through the protocol across EVM chains and Solana, and validates every intent lifecycle transition on-chain.
 
-> **Solo project** · TypeScript · Jan 18 – Feb 17, 2026 · 70 commits
+> **Solo project** · TypeScript
 > It evolved into [`eco-circuit-breaker`](https://github.com/betomartinez13/eco-circuit-breaker), a joint project that continuously validates every route on a schedule (this repo includes the first circuit-breaker prototype in `tests/circuit-breaker/`).
 
 > ⚠️ **This system spends real money.** E2E tests and the circuit breaker send real transactions on mainnet. Use a dedicated test wallet with a small balance, and never commit your `.env`.
