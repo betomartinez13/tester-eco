@@ -2,7 +2,6 @@ node_modules/
 dist/
 .env
 .env.local
-.env.example
 coverage/
 reports/
 circuit-breaker-reports/
@@ -20,3 +19,5 @@ tests/circuit-breaker/routes-base-sol.json
 thoughts/
 IMPLEMENTATION_CONTEXT.md
 plans/
+IMPLEMENTATION_PLAN.md
+implementation-plan/
